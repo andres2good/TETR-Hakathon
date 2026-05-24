@@ -33,8 +33,8 @@ export const env = {
   CARTESIA_VOICE_ID:  requireEnv('CARTESIA_VOICE_ID'),
   CARTESIA_MODEL:     optionalEnv('CARTESIA_MODEL', 'sonic-3'),
 
-  SUPABASE_URL:              requireEnv('SUPABASE_URL'),
-  SUPABASE_SERVICE_ROLE_KEY: requireEnv('SUPABASE_SERVICE_ROLE_KEY'),
+  SUPABASE_URL:              optionalEnv('SUPABASE_URL'),
+  SUPABASE_SERVICE_ROLE_KEY: optionalEnv('SUPABASE_SERVICE_ROLE_KEY'),
 
   APP_SECRET_KEY:     requireEnv('APP_SECRET_KEY'),
   LOG_LEVEL:          optionalEnv('LOG_LEVEL', 'info'),

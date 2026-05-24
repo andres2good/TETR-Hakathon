@@ -32,7 +32,7 @@ const ACTION_SETTLE_MS = {
 
 // ─── Crear sesión nueva ───────────────────────────────────────────────────────
 
-export async function createSession({ ws, deviceId, language = 'es' }) {
+export async function createSession({ ws, deviceId, language = 'en' }) {
   const sessionId = uuidv4();
   const log = sessionLogger(sessionId);
 

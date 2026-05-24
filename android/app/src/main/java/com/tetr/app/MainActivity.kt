@@ -143,7 +143,7 @@ class MainActivity : AppCompatActivity() {
 
         wsClient = TETRWebSocketClient(
             deviceId = deviceId,
-            language = "es",
+            language = "en",
             onSpeech = { base64Audio ->
                 runOnUiThread { updateStatus("Hablando…", "#4A90D9") }
                 audioPlayer.playBase64(base64Audio)
