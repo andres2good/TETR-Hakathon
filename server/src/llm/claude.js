@@ -3,9 +3,10 @@ import { env } from '../config/env.js';
 import { buildSystemPrompt } from './prompts/systemPrompt.js';
 import { sessionLogger } from '../utils/logger.js';
 import { withRetry } from '../utils/retry.js';
-import { ACTIONS } from '../config/constants.js';
 
 const anthropic = new Anthropic({ apiKey: env.ANTHROPIC_API_KEY });
+
+const MAX_TOOL_ITERATIONS = 8; // Máximo de acciones por turno
 
 // Herramientas que Claude puede usar para controlar el celular
 const TOOLS = [
@@ -90,97 +91,201 @@ const TOOLS = [
   },
 ];
 
-// Genera la respuesta del agente dado el contexto de la conversación
+/**
+ * Genera la respuesta del agente con loop completo de herramientas.
+ *
+ * El ciclo correcto de tool use de Anthropic:
+ *   1. Mandamos mensajes → Claude responde con tool_use
+ *   2. Ejecutamos la herramienta en el celular
+ *   3. Esperamos que la pantalla cambie
+ *   4. Mandamos tool_result con la nueva pantalla
+ *   5. Claude continúa → puede usar más herramientas o dar respuesta final
+ *   6. Repetir hasta que Claude dé respuesta de texto o alcancemos MAX_TOOL_ITERATIONS
+ */
 export async function generateResponse({
   sessionId,
   messages,
-  screenshot,      // base64 de la pantalla actual (opcional)
-  uiTree,          // descripción en texto de los elementos de la pantalla
+  screenshot,
+  uiTree,
   language,
   userName,
   onTextChunk,
   onToolCall,
+  getLatestScreenContext, // función que devuelve { uiTree, screenshot } actualizado
 }) {
   const log = sessionLogger(sessionId);
 
   // Construir el mensaje del usuario enriquecido con contexto de pantalla
-  const lastMessages = [...messages];
-  const lastUserMsg = lastMessages[lastMessages.length - 1];
+  const workingMessages = [...messages];
+  const lastUserMsg = workingMessages[workingMessages.length - 1];
 
-  // Si hay contexto de pantalla, lo agregamos al último mensaje del usuario
   if (lastUserMsg?.role === 'user' && (uiTree || screenshot)) {
-    const screenContext = buildScreenContext(uiTree, screenshot);
-    if (Array.isArray(lastUserMsg.content)) {
-      lastUserMsg.content.push({ type: 'text', text: screenContext });
-    } else {
-      lastUserMsg.content = [
-        { type: 'text', text: lastUserMsg.content },
-        { type: 'text', text: screenContext },
-      ];
-      // Si hay screenshot, agregarlo como imagen
-      if (screenshot) {
-        lastUserMsg.content.push({
-          type: 'image',
-          source: { type: 'base64', media_type: 'image/jpeg', data: screenshot },
-        });
-      }
-    }
+    attachScreenContext(lastUserMsg, uiTree, screenshot);
   }
 
   log.debug('[Claude] Generando respuesta', { messageCount: messages.length, hasScreenshot: !!screenshot });
 
   return await withRetry(async () => {
-    let fullResponse = '';
-    let pendingToolCall = null;
+    let finalText = '';
+    let iterations = 0;
 
-    const stream = anthropic.messages.stream({
-      model: env.CLAUDE_MODEL,
-      max_tokens: 512,
-      temperature: 0.3,
-      system: [{ type: 'text', text: buildSystemPrompt({ language, userName }), cache_control: { type: 'ephemeral' } }],
-      messages: lastMessages,
-      tools: TOOLS,
-    });
+    // ─── Loop de herramientas ─────────────────────────────────────────────────
+    while (iterations < MAX_TOOL_ITERATIONS) {
+      iterations++;
 
-    for await (const event of stream) {
-      // Chunk de texto — hablar mientras genera
-      if (event.type === 'content_block_delta' && event.delta.type === 'text_delta') {
-        fullResponse += event.delta.text;
-        onTextChunk?.(event.delta.text);
+      const { text, toolCalls, stopReason } = await streamOneTurn({
+        log,
+        messages: workingMessages,
+        language,
+        userName,
+        onTextChunk,
+      });
+
+      if (text) finalText += text;
+
+      // Sin herramientas — Claude terminó
+      if (stopReason === 'end_turn' || toolCalls.length === 0) {
+        log.debug('[Claude] Respuesta final', { iterations, chars: finalText.length });
+        break;
       }
 
-      // Claude empieza a llamar una herramienta
-      if (event.type === 'content_block_start' && event.content_block.type === 'tool_use') {
-        pendingToolCall = { id: event.content_block.id, name: event.content_block.name, inputBuffer: '' };
-      }
+      // ─── Ejecutar herramientas y recopilar resultados ─────────────────────
+      const toolResults = [];
 
-      // Acumulando argumentos de la herramienta
-      if (event.type === 'content_block_delta' && event.delta.type === 'input_json_delta' && pendingToolCall) {
-        pendingToolCall.inputBuffer += event.delta.partial_json;
-      }
+      for (const tool of toolCalls) {
+        log.info('[Claude] Herramienta', { name: tool.name, input: tool.input, iteration: iterations });
 
-      // Herramienta completa — ejecutar
-      if (event.type === 'content_block_stop' && pendingToolCall) {
+        let result = 'ok';
         try {
-          const input = JSON.parse(pendingToolCall.inputBuffer || '{}');
-          log.info('[Claude] Herramienta', { name: pendingToolCall.name, input });
-          await onToolCall?.(pendingToolCall.name, input, pendingToolCall.id);
+          result = await onToolCall?.(tool.name, tool.input, tool.id) ?? 'ok';
         } catch (e) {
-          log.error('[Claude] Error parseando herramienta', { error: e.message });
+          result = `error: ${e.message}`;
+          log.error('[Claude] Herramienta falló', { name: tool.name, error: e.message });
         }
-        pendingToolCall = null;
+
+        toolResults.push({
+          type: 'tool_result',
+          tool_use_id: tool.id,
+          content: typeof result === 'string' ? result : JSON.stringify(result),
+        });
       }
+
+      // ─── Agregar la respuesta de Claude + resultados al historial ─────────
+      // (Anthropic requiere que el historial incluya el mensaje del asistente con tool_use)
+      workingMessages.push({
+        role: 'assistant',
+        content: [
+          ...(text ? [{ type: 'text', text }] : []),
+          ...toolCalls.map(t => ({
+            type: 'tool_use',
+            id: t.id,
+            name: t.name,
+            input: t.input,
+          })),
+        ],
+      });
+
+      // Agregar estado actualizado de pantalla a los tool_results
+      const latestContext = await getLatestScreenContext?.();
+      if (latestContext) {
+        const screenText = buildScreenContext(latestContext.uiTree, latestContext.screenshot);
+        // Adjuntar contexto al primer tool_result
+        toolResults[0].content += `\n\n${screenText}`;
+
+        if (latestContext.screenshot) {
+          toolResults[0].content = [
+            { type: 'text', text: toolResults[0].content },
+            { type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data: latestContext.screenshot } },
+          ];
+        }
+      }
+
+      workingMessages.push({ role: 'user', content: toolResults });
+
+      // Si stop_reason fue tool_use, continuamos el loop
+      if (stopReason !== 'tool_use') break;
     }
 
-    return fullResponse;
+    if (iterations >= MAX_TOOL_ITERATIONS) {
+      log.warn('[Claude] Alcanzó límite de iteraciones', { max: MAX_TOOL_ITERATIONS });
+    }
+
+    return finalText;
   }, { name: 'Claude API', maxAttempts: 2 });
 }
 
-// Construye el contexto de pantalla para Claude
+// ─── Un turno del stream ──────────────────────────────────────────────────────
+
+async function streamOneTurn({ log, messages, language, userName, onTextChunk }) {
+  let text = '';
+  let stopReason = 'end_turn';
+  const toolCalls = [];
+  let pendingTool = null;
+
+  const stream = anthropic.messages.stream({
+    model: env.CLAUDE_MODEL,
+    max_tokens: 1024,
+    temperature: 0.3,
+    system: [{ type: 'text', text: buildSystemPrompt({ language, userName }), cache_control: { type: 'ephemeral' } }],
+    messages,
+    tools: TOOLS,
+    tool_choice: { type: 'auto' },
+  });
+
+  for await (const event of stream) {
+    if (event.type === 'message_delta' && event.delta?.stop_reason) {
+      stopReason = event.delta.stop_reason;
+    }
+
+    if (event.type === 'content_block_delta' && event.delta.type === 'text_delta') {
+      text += event.delta.text;
+      onTextChunk?.(event.delta.text);
+    }
+
+    if (event.type === 'content_block_start' && event.content_block.type === 'tool_use') {
+      pendingTool = { id: event.content_block.id, name: event.content_block.name, inputBuffer: '' };
+    }
+
+    if (event.type === 'content_block_delta' && event.delta.type === 'input_json_delta' && pendingTool) {
+      pendingTool.inputBuffer += event.delta.partial_json;
+    }
+
+    if (event.type === 'content_block_stop' && pendingTool) {
+      try {
+        pendingTool.input = JSON.parse(pendingTool.inputBuffer || '{}');
+        toolCalls.push(pendingTool);
+      } catch (e) {
+        log.error('[Claude] Error parseando input de herramienta', { error: e.message });
+      }
+      pendingTool = null;
+    }
+  }
+
+  return { text, toolCalls, stopReason };
+}
+
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
+function attachScreenContext(userMsg, uiTree, screenshot) {
+  const screenContext = buildScreenContext(uiTree, screenshot);
+  if (Array.isArray(userMsg.content)) {
+    userMsg.content.push({ type: 'text', text: screenContext });
+    if (screenshot) {
+      userMsg.content.push({ type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data: screenshot } });
+    }
+  } else {
+    userMsg.content = [
+      { type: 'text', text: userMsg.content },
+      { type: 'text', text: screenContext },
+      ...(screenshot ? [{ type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data: screenshot } }] : []),
+    ];
+  }
+}
+
 function buildScreenContext(uiTree, screenshot) {
-  const parts = ['\n\n--- CONTEXTO DE PANTALLA ACTUAL ---'];
-  if (uiTree) parts.push(`UI Elements:\n${uiTree}`);
+  const parts = ['\n\n--- PANTALLA ACTUAL ---'];
+  if (uiTree) parts.push(`Elementos visibles:\n${uiTree}`);
   if (!uiTree && screenshot) parts.push('(Ver imagen adjunta)');
-  parts.push('--- FIN DE CONTEXTO ---');
+  parts.push('--- FIN ---');
   return parts.join('\n');
 }

@@ -1,14 +1,14 @@
 /**
  * sessionManager.js — Maneja las sesiones activas de usuarios
  *
- * Cada usuario conectado tiene una sesión con su historial de conversación,
- * su contexto de pantalla actual y su pipeline de voz.
- * Todo vive en memoria — cuando el usuario desconecta, se limpia.
+ * Cada usuario tiene su sesión con historial de conversación,
+ * contexto de pantalla y pipeline de voz. Todo en memoria.
  */
 
 import { v4 as uuidv4 } from 'uuid';
 import { createDeepgramSession } from '../stt/deepgram.js';
 import { generateResponse } from '../llm/claude.js';
+import { detectSimpleIntent } from '../llm/intentDetector.js';
 import { textToSpeech } from '../tts/cartesia.js';
 import { upsertUser, saveSession, endSession, logAction } from '../storage/supabase.js';
 import { WS_MESSAGES, SESSION, ACTIONS } from '../config/constants.js';
@@ -16,6 +16,19 @@ import { sessionLogger } from '../utils/logger.js';
 
 // Mapa de sesiones activas: sessionId → estado
 const activeSessions = new Map();
+
+// Tiempo de espera tras ejecutar una acción para que la pantalla se actualice
+const ACTION_SETTLE_MS = {
+  open_app: 1500,
+  click: 600,
+  set_text: 400,
+  scroll_up: 300,
+  scroll_down: 300,
+  press_back: 500,
+  press_home: 500,
+  request_screenshot: 800,
+  default: 400,
+};
 
 // ─── Crear sesión nueva ───────────────────────────────────────────────────────
 
@@ -25,10 +38,7 @@ export async function createSession({ ws, deviceId, language = 'es' }) {
 
   log.info('[Session] Nueva sesión', { deviceId, language });
 
-  // Obtener o crear usuario en Supabase
   const user = await upsertUser({ deviceId, language }).catch(() => null);
-
-  // Guardar sesión en Supabase
   await saveSession({ id: sessionId, userId: user?.id, startedAt: new Date().toISOString() }).catch(() => {});
 
   const session = {
@@ -36,16 +46,15 @@ export async function createSession({ ws, deviceId, language = 'es' }) {
     ws,
     user,
     language,
-    messages: [],         // Historial de conversación para Claude
-    lastUiTree: null,     // Último UI tree recibido del dispositivo
-    lastScreenshot: null, // Último screenshot recibido
+    messages: [],
+    lastUiTree: null,
+    lastScreenshot: null,
     actionsCount: 0,
     isProcessing: false,
     deepgram: null,
     startTime: Date.now(),
   };
 
-  // Iniciar Deepgram
   session.deepgram = createDeepgramSession({
     sessionId,
     language,
@@ -55,7 +64,6 @@ export async function createSession({ ws, deviceId, language = 'es' }) {
 
   activeSessions.set(sessionId, session);
 
-  // Saludo inicial
   const greeting = language === 'es'
     ? `Hola${user?.name ? ', ' + user.name : ''}. Soy TETR, tu asistente. ¿En qué te ayudo?`
     : `Hi${user?.name ? ', ' + user.name : ''}. I'm TETR, your assistant. How can I help?`;
@@ -74,7 +82,7 @@ export function handleAudioChunk(sessionId, audioChunk) {
   session.deepgram?.sendAudio(audioChunk);
 }
 
-// ─── Manejar UI tree recibido del dispositivo ─────────────────────────────────
+// ─── Manejar UI tree ──────────────────────────────────────────────────────────
 
 export function handleUiTree(sessionId, uiTree) {
   const session = activeSessions.get(sessionId);
@@ -82,7 +90,7 @@ export function handleUiTree(sessionId, uiTree) {
   session.lastUiTree = uiTree;
 }
 
-// ─── Manejar screenshot recibido del dispositivo ──────────────────────────────
+// ─── Manejar screenshot ───────────────────────────────────────────────────────
 
 export function handleScreenshot(sessionId, screenshotBase64) {
   const session = activeSessions.get(sessionId);
@@ -100,11 +108,7 @@ async function handleUserSpeech(sessionId, text) {
   log.info('[Session] Usuario dijo', { text });
 
   session.isProcessing = true;
-
-  // Enviar transcripción a la app (para mostrar en pantalla si quieren)
   sendToDevice(sessionId, WS_MESSAGES.TRANSCRIPT, { text });
-
-  // Agregar al historial
   session.messages.push({ role: 'user', content: text });
 
   // Mantener historial acotado
@@ -113,6 +117,28 @@ async function handleUserSpeech(sessionId, text) {
   }
 
   try {
+    // ─── Intento de intención simple primero (sin gastar tokens) ─────────────
+    const simple = detectSimpleIntent(text);
+    if (simple) {
+      log.info('[Session] Intención simple detectada', simple);
+      sendToDevice(sessionId, WS_MESSAGES.ACTION, { type: simple.action, ...simple.params });
+      session.actionsCount++;
+
+      const confirmations = {
+        volume_up: language(session, 'Volumen subido', 'Volume up'),
+        volume_down: language(session, 'Volumen bajado', 'Volume down'),
+        press_home: language(session, 'Yendo al inicio', 'Going home'),
+        press_back: language(session, 'Regresando', 'Going back'),
+        scroll_up: language(session, 'Deslizando arriba', 'Scrolling up'),
+        scroll_down: language(session, 'Deslizando abajo', 'Scrolling down'),
+      };
+      const confirmation = confirmations[simple.action] || language(session, 'Listo', 'Done');
+      await speakToUser(sessionId, confirmation);
+      session.messages.push({ role: 'assistant', content: confirmation });
+      return;
+    }
+
+    // ─── Respuesta completa con Claude + loop de herramientas ─────────────────
     let agentText = '';
     const pendingActions = [];
 
@@ -124,41 +150,43 @@ async function handleUserSpeech(sessionId, text) {
       language: session.language,
       userName: session.user?.name,
 
-      // Cada chunk de texto — convertir a audio y enviar
+      // Texto en stream — hablar por oraciones para reducir latencia
       onTextChunk: async (chunk) => {
         agentText += chunk;
-        // Hablar por oraciones para reducir latencia
         if (/[.!?]/.test(chunk) && agentText.length > 10) {
           await speakToUser(sessionId, agentText);
           agentText = '';
         }
       },
 
-      // Claude quiere ejecutar una acción en el dispositivo
+      // Herramienta — ejecutar en el celular y esperar
       onToolCall: async (toolName, toolInput, toolId) => {
         const action = { type: toolName, ...toolInput };
         pendingActions.push(action);
-
-        // Enviar la acción al dispositivo Android para ejecutarla
         sendToDevice(sessionId, WS_MESSAGES.ACTION, action);
         session.actionsCount++;
 
-        // Si Claude pide screenshot, esperar un momento para recibirlo
-        if (toolName === ACTIONS.SCREENSHOT) {
-          await new Promise(r => setTimeout(r, 800));
-        }
+        // Esperar a que la pantalla se actualice
+        const wait = ACTION_SETTLE_MS[toolName] ?? ACTION_SETTLE_MS.default;
+        await new Promise(r => setTimeout(r, wait));
 
         return { success: true, action: toolName };
       },
+
+      // Devolver el estado más reciente de la pantalla después de cada acción
+      getLatestScreenContext: async () => ({
+        uiTree: session.lastUiTree,
+        screenshot: session.lastScreenshot,
+      }),
     });
 
-    // Hablar lo que quedó pendiente
+    // Texto sobrante
     if (agentText.trim()) {
       await speakToUser(sessionId, agentText.trim());
     }
 
-    // Guardar en historial y Supabase
-    const fullAgentText = session.messages[session.messages.length - 1]?.content || agentText;
+    // Guardar en historial
+    const fullAgentText = agentText || pendingActions.map(a => a.type).join(', ');
     session.messages.push({ role: 'assistant', content: fullAgentText });
 
     await logAction({
@@ -169,18 +197,24 @@ async function handleUserSpeech(sessionId, text) {
       action: pendingActions[0] || null,
     }).catch(() => {});
 
-    // Limpiar screenshot después de usarlo (para no mandarlo en cada turno)
+    // Limpiar screenshot — ya se usó en este turno
     session.lastScreenshot = null;
 
   } catch (error) {
     log.error('[Session] Error procesando', { error: error.message });
     const fallback = session.language === 'es'
-      ? 'Tuve un problema. ¿Puedes repetir lo que dijiste?'
+      ? 'Tuve un problema. ¿Puedes repetir?'
       : 'I had an issue. Can you repeat that?';
     await speakToUser(sessionId, fallback);
   } finally {
     session.isProcessing = false;
   }
+}
+
+// ─── Helper de idioma ─────────────────────────────────────────────────────────
+
+function language(session, es, en) {
+  return session.language === 'es' ? es : en;
 }
 
 // ─── Hablarle al usuario ──────────────────────────────────────────────────────
@@ -190,7 +224,6 @@ async function speakToUser(sessionId, text) {
   if (!session || !text?.trim()) return;
 
   const log = sessionLogger(sessionId);
-
   try {
     const audio = await textToSpeech({ text, language: session.language, sessionId });
     if (audio) {
@@ -210,7 +243,7 @@ function sendToDevice(sessionId, type, payload) {
   try {
     session.ws.send(JSON.stringify({ type, ...payload }));
   } catch (e) {
-    sessionLogger(sessionId).error('[Session] Error enviando mensaje', { type, error: e.message });
+    sessionLogger(sessionId).error('[Session] Error enviando', { type, error: e.message });
   }
 }
 
@@ -233,7 +266,6 @@ export function getActiveSessionsCount() {
   return activeSessions.size;
 }
 
-// Encontrar sessionId a partir del WebSocket
 export function getSessionByWs(ws) {
   for (const [id, session] of activeSessions.entries()) {
     if (session.ws === ws) return id;
