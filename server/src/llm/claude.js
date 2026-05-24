@@ -115,13 +115,16 @@ export async function generateResponse({
 }) {
   const log = sessionLogger(sessionId);
 
-  // Construir el mensaje del usuario enriquecido con contexto de pantalla
-  const workingMessages = [...messages];
-  const lastUserMsg = workingMessages[workingMessages.length - 1];
-
-  if (lastUserMsg?.role === 'user' && (uiTree || screenshot)) {
-    attachScreenContext(lastUserMsg, uiTree, screenshot);
-  }
+  // Copiar mensajes para no mutar session.messages (los screenshots no deben persistir en el historial)
+  const workingMessages = messages.map((m, i) => {
+    // Solo el último mensaje del usuario necesita el contexto de pantalla — copiarlo
+    if (i === messages.length - 1 && m.role === 'user' && (uiTree || screenshot)) {
+      const copy = { ...m };
+      attachScreenContext(copy, uiTree, screenshot);
+      return copy;
+    }
+    return m;
+  });
 
   log.debug('[Claude] Generando respuesta', { messageCount: messages.length, hasScreenshot: !!screenshot });
 

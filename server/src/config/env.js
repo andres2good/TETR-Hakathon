@@ -34,7 +34,6 @@ export const env = {
   CARTESIA_MODEL:     optionalEnv('CARTESIA_MODEL', 'sonic-3'),
 
   SUPABASE_URL:              requireEnv('SUPABASE_URL'),
-  SUPABASE_ANON_KEY:         requireEnv('SUPABASE_ANON_KEY'),
   SUPABASE_SERVICE_ROLE_KEY: requireEnv('SUPABASE_SERVICE_ROLE_KEY'),
 
   APP_SECRET_KEY:     requireEnv('APP_SECRET_KEY'),
