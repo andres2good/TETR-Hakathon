@@ -1,15 +1,22 @@
 {
   "manifest_version": 3,
-  "name": "TETR — Voice Assistant",
+  "name": "NAVI — Voice Assistant",
   "version": "0.1.0",
-  "description": "Control your browser by voice. Powered by Claude AI.",
+  "description": "Control your browser by voice. Always listening. Powered by Claude AI.",
 
   "action": {
-    "default_popup": "popup.html",
-    "default_title": "TETR Voice Assistant"
+    "default_title": "NAVI Voice Assistant"
   },
 
-  "permissions": ["activeTab", "scripting", "tabs"],
+  "side_panel": {
+    "default_path": "sidepanel.html"
+  },
+
+  "background": {
+    "service_worker": "background.js"
+  },
+
+  "permissions": ["activeTab", "scripting", "tabs", "sidePanel"],
   "host_permissions": ["<all_urls>"],
 
   "content_scripts": [

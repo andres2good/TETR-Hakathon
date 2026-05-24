@@ -65,8 +65,8 @@ export async function createSession({ ws, deviceId, language = 'en' }) {
   activeSessions.set(sessionId, session);
 
   const greeting = language === 'es'
-    ? `Hola${user?.name ? ', ' + user.name : ''}. Soy TETR, tu asistente. ¿En qué te ayudo?`
-    : `Hi${user?.name ? ', ' + user.name : ''}. I'm TETR, your assistant. How can I help?`;
+    ? `Hola${user?.name ? ', ' + user.name : ''}. Soy NAVI, tu asistente. ¿En qué te ayudo?`
+    : `Hi${user?.name ? ', ' + user.name : ''}! I'm NAVI, what do you want to do today?`;
 
   await speakToUser(sessionId, greeting);
 
