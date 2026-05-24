@@ -1,0 +1,205 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>TETR</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      width: 360px;
+      min-height: 500px;
+      background: #080810;
+      color: #fff;
+      font-family: 'Segoe UI', system-ui, sans-serif;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 32px 20px 24px;
+    }
+
+    .logo {
+      font-size: 42px;
+      font-weight: 900;
+      letter-spacing: 10px;
+      background: linear-gradient(135deg, #fff 0%, #a0a0ff 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      margin-bottom: 4px;
+    }
+
+    .tagline {
+      color: #444;
+      font-size: 10px;
+      letter-spacing: 3px;
+      text-transform: uppercase;
+      margin-bottom: 24px;
+    }
+
+    /* Status */
+    .status-pill {
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      border: 1px solid #222;
+      border-radius: 999px;
+      padding: 6px 16px;
+      font-size: 12px;
+      color: #666;
+      margin-bottom: 24px;
+      transition: all 0.3s;
+    }
+    .status-pill.connected { border-color: #2a5; color: #4d4; }
+    .status-pill.listening { border-color: #44f; color: #88f; }
+    .status-pill.thinking  { border-color: #fa0; color: #fb4; }
+    .status-pill.speaking  { border-color: #a4f; color: #c8f; }
+
+    .dot {
+      width: 7px; height: 7px;
+      border-radius: 50%;
+      background: currentColor;
+      flex-shrink: 0;
+    }
+    .dot.pulse { animation: pulse 1.2s infinite; }
+    @keyframes pulse {
+      0%,100% { opacity:1; transform:scale(1); }
+      50%      { opacity:.3; transform:scale(.6); }
+    }
+
+    /* Visualizer */
+    .viz {
+      display: flex;
+      align-items: center;
+      gap: 3px;
+      height: 20px;
+      margin-bottom: 12px;
+    }
+    .bar {
+      width: 3px;
+      background: #222;
+      border-radius: 99px;
+      height: 4px;
+      transition: height 0.08s, background 0.2s;
+    }
+
+    /* Mic button */
+    .mic-wrap { position: relative; margin-bottom: 24px; }
+    .mic-ring {
+      position: absolute;
+      inset: -14px;
+      border-radius: 50%;
+      border: 2px solid #44f;
+      opacity: 0;
+    }
+    .mic-ring.active { opacity: 1; animation: ring 1.5s infinite; }
+    @keyframes ring {
+      0%   { transform:scale(1);   opacity:.7; }
+      100% { transform:scale(1.6); opacity:0; }
+    }
+
+    .mic-btn {
+      width: 72px; height: 72px;
+      border-radius: 50%;
+      border: 2px solid #2a2a2a;
+      background: #0e0e1a;
+      font-size: 26px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: all 0.2s;
+      position: relative;
+      z-index: 1;
+    }
+    .mic-btn:hover  { border-color: #444; }
+    .mic-btn.active {
+      border-color: #44f;
+      background: #141430;
+      box-shadow: 0 0 24px rgba(80,80,255,.35);
+    }
+    .mic-btn:disabled { opacity: .4; cursor: default; }
+
+    /* Conversation */
+    .convo {
+      width: 100%;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      max-height: 220px;
+      overflow-y: auto;
+      scrollbar-width: thin;
+      scrollbar-color: #1a1a1a transparent;
+    }
+
+    .bubble {
+      padding: 9px 13px;
+      border-radius: 14px;
+      font-size: 13px;
+      line-height: 1.45;
+      max-width: 90%;
+      animation: fadeUp .25s ease;
+    }
+    @keyframes fadeUp {
+      from { opacity:0; transform:translateY(6px); }
+      to   { opacity:1; transform:translateY(0); }
+    }
+    .bubble.user {
+      background: #13132e;
+      border: 1px solid #22225a;
+      color: #99a;
+      align-self: flex-end;
+      border-bottom-right-radius: 3px;
+    }
+    .bubble.agent {
+      background: #0f0f1c;
+      border: 1px solid #1e1e1e;
+      color: #ddd;
+      align-self: flex-start;
+      border-bottom-left-radius: 3px;
+    }
+    .bubble .lbl {
+      font-size: 9px;
+      letter-spacing: 1px;
+      text-transform: uppercase;
+      opacity: .35;
+      margin-bottom: 3px;
+    }
+
+    .hint {
+      margin-top: 16px;
+      color: #2a2a2a;
+      font-size: 10px;
+      letter-spacing: .5px;
+      text-align: center;
+    }
+  </style>
+</head>
+<body>
+
+  <div class="logo">TETR</div>
+  <div class="tagline">Voice Assistant</div>
+
+  <div class="status-pill" id="pill">
+    <div class="dot pulse" id="dot"></div>
+    <span id="statusTxt">Connecting…</span>
+  </div>
+
+  <div class="viz">
+    <div class="bar" id="b0"></div><div class="bar" id="b1"></div>
+    <div class="bar" id="b2"></div><div class="bar" id="b3"></div>
+    <div class="bar" id="b4"></div><div class="bar" id="b5"></div>
+    <div class="bar" id="b6"></div>
+  </div>
+
+  <div class="mic-wrap">
+    <div class="mic-ring" id="ring"></div>
+    <button class="mic-btn" id="micBtn" disabled>🎙️</button>
+  </div>
+
+  <div class="convo" id="convo"></div>
+
+  <div class="hint">Say a command — TETR will listen and act</div>
+
+  <script src="popup.js"></script>
+</body>
+</html>
