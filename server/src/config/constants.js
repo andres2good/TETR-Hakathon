@@ -24,6 +24,8 @@ export const ACTIONS = {
   PRESS_BACK:     'press_back',
   PRESS_HOME:     'press_home',
   PRESS_ENTER:    'press_enter',
+  PRESS_KEY:      'press_key',
+  CLEAR_FIELD:    'clear_field',
   VOLUME_UP:      'volume_up',
   VOLUME_DOWN:    'volume_down',
   SCREENSHOT:     'request_screenshot',

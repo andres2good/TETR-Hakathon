@@ -31,7 +31,9 @@ const ACTION_SETTLE_MS = {
   press_back: 800,
   press_home: 600,
   press_enter: 600,
-  request_screenshot: 1200,
+  press_key: 400,
+  clear_field: 200,
+  request_screenshot: 1500,
   default: 600,
 };
 
@@ -158,8 +160,8 @@ async function handleUserSpeech(sessionId, text) {
     await generateResponse({
       sessionId,
       messages: session.messages,
-      screenshot: session.lastScreenshot,
-      uiTree: session.lastUiTree,
+      screenshot: null,          // Never auto-send — Claude uses the live UI tree instead.
+      uiTree: session.lastUiTree, // Screenshots only arrive via explicit request_screenshot calls.
       language: session.language,
       userName: session.user?.name,
 

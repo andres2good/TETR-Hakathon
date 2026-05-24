@@ -6,7 +6,7 @@ import { withRetry } from '../utils/retry.js';
 
 const anthropic = new Anthropic({ apiKey: env.ANTHROPIC_API_KEY });
 
-const MAX_TOOL_ITERATIONS = 10;
+const MAX_TOOL_ITERATIONS = 15;
 
 const TOOLS = [
   {
@@ -111,8 +111,30 @@ const TOOLS = [
     },
   },
   {
+    name: 'press_key',
+    description: 'Presses a keyboard key on the currently focused element. Use Tab to move between fields, Enter to confirm/submit, Escape to cancel, ArrowDown to open dropdowns.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        key: { type: 'string', enum: ['Enter', 'Tab', 'Escape', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Space', 'Backspace'], description: 'Key to press' },
+      },
+      required: ['key'],
+    },
+  },
+  {
+    name: 'clear_field',
+    description: 'Clears the content of a field before typing new text into it.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        target: { type: 'string', description: 'Exact field label from the UI tree' },
+      },
+      required: ['target'],
+    },
+  },
+  {
     name: 'request_screenshot',
-    description: 'Takes a fresh screenshot to see the current state of the page. Use this after opening apps or after actions that change the page.',
+    description: 'Takes a fresh screenshot to see the current state of the page. Use ONLY when the UI tree is missing key elements or a visual check is needed. Do NOT use after every action.',
     input_schema: { type: 'object', properties: {} },
   },
 ];
@@ -245,8 +267,8 @@ async function streamOneTurn({ log, messages, language, userName, onTextChunk })
 
   const stream = anthropic.messages.stream({
     model: env.CLAUDE_MODEL,
-    max_tokens: 300,
-    temperature: 0.2,
+    max_tokens: 350,
+    temperature: 0.1,
     system: [{ type: 'text', text: buildSystemPrompt({ language, userName }), cache_control: { type: 'ephemeral' } }],
     messages,
     tools: TOOLS,

@@ -128,6 +128,8 @@ function connect() {
 
       case 'click':
       case 'set_text':
+      case 'clear_field':
+      case 'press_key':
       case 'scroll_up':
       case 'scroll_down':
       case 'press_back':
