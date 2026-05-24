@@ -1,0 +1,7 @@
+sounddevice==0.4.6
+numpy==1.26.4
+websocket-client==1.7.0
+mss==9.0.1
+Pillow==10.3.0
+pyautogui==0.9.54
+pytesseract==0.3.10
