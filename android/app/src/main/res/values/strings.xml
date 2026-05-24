@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">TETR</string>
+    <string name="accessibility_service_label">TETR — Asistente de voz</string>
+    <string name="accessibility_service_description">TETR necesita acceso de accesibilidad para leer la pantalla y ejecutar acciones por ti.</string>
+    <string name="btn_activate">Activar TETR</string>
+    <string name="btn_go_to_settings">Ir a configuración de accesibilidad</string>
+    <string name="status_connected">Conectado — di algo</string>
+    <string name="status_disconnected">Desconectado</string>
+    <string name="status_connecting">Conectando…</string>
+    <string name="status_listening">Escuchando…</string>
+    <string name="status_thinking">Procesando…</string>
+    <string name="permission_mic_rationale">TETR necesita el micrófono para escuchar tus comandos de voz.</string>
+</resources>

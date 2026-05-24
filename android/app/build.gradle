@@ -1,0 +1,62 @@
+plugins {
+    id 'com.android.application'
+    id 'org.jetbrains.kotlin.android'
+}
+
+android {
+    namespace 'com.tetr.app'
+    compileSdk 34
+
+    defaultConfig {
+        applicationId "com.tetr.app"
+        minSdk 26
+        targetSdk 34
+        versionCode 1
+        versionName "0.1.0"
+
+        // URL del servidor — cambiar a la IP real en producción
+        buildConfigField "String", "SERVER_URL", '"ws://10.0.2.2:3000/ws"'
+        buildConfigField "String", "APP_KEY", '"tetr-dev-key-2024"'
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+        }
+    }
+
+    buildFeatures {
+        buildConfig true
+        viewBinding true
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_1_8
+        targetCompatibility JavaVersion.VERSION_1_8
+    }
+
+    kotlinOptions {
+        jvmTarget = '1.8'
+    }
+}
+
+dependencies {
+    implementation 'androidx.core:core-ktx:1.12.0'
+    implementation 'androidx.appcompat:appcompat:1.6.1'
+    implementation 'com.google.android.material:material:1.11.0'
+    implementation 'androidx.constraintlayout:constraintlayout:2.1.4'
+
+    // WebSocket — OkHttp es la librería más usada en Android
+    implementation 'com.squareup.okhttp3:okhttp:4.12.0'
+
+    // JSON parsing
+    implementation 'org.json:json:20231013'
+
+    // Coroutines — para código asíncrono limpio
+    implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3'
+
+    // Lifecycle para manejar el ciclo de vida de la app
+    implementation 'androidx.lifecycle:lifecycle-runtime-ktx:2.7.0'
+    implementation 'androidx.lifecycle:lifecycle-service:2.7.0'
+}
