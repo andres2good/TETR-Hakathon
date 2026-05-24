@@ -1,0 +1,396 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>TETR — Voice Assistant</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      background: #080810;
+      color: #fff;
+      font-family: 'Segoe UI', system-ui, sans-serif;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+    }
+
+    /* ── Header ── */
+    .logo {
+      font-size: 72px;
+      font-weight: 900;
+      letter-spacing: 12px;
+      background: linear-gradient(135deg, #fff 0%, #a0a0ff 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      margin-bottom: 6px;
+    }
+    .tagline {
+      color: #555;
+      font-size: 13px;
+      letter-spacing: 3px;
+      text-transform: uppercase;
+      margin-bottom: 48px;
+    }
+
+    /* ── Status pill ── */
+    .status-pill {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      background: #111120;
+      border: 1px solid #222;
+      border-radius: 999px;
+      padding: 8px 20px;
+      font-size: 13px;
+      color: #888;
+      margin-bottom: 48px;
+      transition: all 0.3s;
+    }
+    .status-pill.connected  { border-color: #2a5; color: #4d4; }
+    .status-pill.listening  { border-color: #44f; color: #88f; }
+    .status-pill.thinking   { border-color: #fa0; color: #fb4; }
+    .status-pill.speaking   { border-color: #a4f; color: #c8f; }
+
+    .dot {
+      width: 8px; height: 8px;
+      border-radius: 50%;
+      background: currentColor;
+    }
+    .dot.pulse { animation: pulse 1.2s infinite; }
+    @keyframes pulse {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50%       { opacity: 0.4; transform: scale(0.7); }
+    }
+
+    /* ── Mic button ── */
+    .mic-wrap {
+      position: relative;
+      margin-bottom: 48px;
+    }
+    .mic-ring {
+      position: absolute;
+      inset: -16px;
+      border-radius: 50%;
+      border: 2px solid #44f;
+      opacity: 0;
+      animation: none;
+    }
+    .mic-ring.active {
+      opacity: 1;
+      animation: ring 1.5s infinite;
+    }
+    @keyframes ring {
+      0%   { transform: scale(1);   opacity: 0.7; }
+      100% { transform: scale(1.5); opacity: 0; }
+    }
+
+    .mic-btn {
+      width: 88px; height: 88px;
+      border-radius: 50%;
+      border: none;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 32px;
+      background: #111120;
+      border: 2px solid #333;
+      transition: all 0.2s;
+      position: relative;
+      z-index: 1;
+    }
+    .mic-btn:hover { border-color: #555; background: #181828; }
+    .mic-btn.active {
+      background: #1a1a3a;
+      border-color: #44f;
+      box-shadow: 0 0 32px rgba(80,80,255,0.3);
+    }
+
+    /* ── Conversation ── */
+    .conversation {
+      width: 100%;
+      max-width: 600px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      max-height: 340px;
+      overflow-y: auto;
+      padding: 0 16px;
+      scrollbar-width: thin;
+      scrollbar-color: #222 transparent;
+    }
+
+    .bubble {
+      padding: 12px 16px;
+      border-radius: 16px;
+      font-size: 15px;
+      line-height: 1.5;
+      max-width: 85%;
+      animation: fadeUp 0.3s ease;
+    }
+    @keyframes fadeUp {
+      from { opacity: 0; transform: translateY(8px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+
+    .bubble.user {
+      background: #1a1a3a;
+      border: 1px solid #2a2a5a;
+      color: #aac;
+      align-self: flex-end;
+      border-bottom-right-radius: 4px;
+    }
+    .bubble.agent {
+      background: #111120;
+      border: 1px solid #222;
+      color: #eee;
+      align-self: flex-start;
+      border-bottom-left-radius: 4px;
+    }
+    .bubble .label {
+      font-size: 10px;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      opacity: 0.4;
+      margin-bottom: 4px;
+    }
+
+    /* ── Visualizer bars ── */
+    .visualizer {
+      display: flex;
+      align-items: center;
+      gap: 3px;
+      height: 24px;
+      margin-bottom: 16px;
+    }
+    .bar {
+      width: 3px;
+      background: #44f;
+      border-radius: 99px;
+      height: 4px;
+      transition: height 0.1s;
+    }
+
+    /* ── Footer ── */
+    .hint {
+      margin-top: 32px;
+      color: #333;
+      font-size: 12px;
+      letter-spacing: 1px;
+    }
+  </style>
+</head>
+<body>
+
+  <div class="logo">TETR</div>
+  <div class="tagline">AI Voice Assistant</div>
+
+  <div class="status-pill" id="statusPill">
+    <div class="dot" id="statusDot"></div>
+    <span id="statusText">Connecting…</span>
+  </div>
+
+  <!-- Audio visualizer -->
+  <div class="visualizer" id="visualizer">
+    <div class="bar" id="b0"></div>
+    <div class="bar" id="b1"></div>
+    <div class="bar" id="b2"></div>
+    <div class="bar" id="b3"></div>
+    <div class="bar" id="b4"></div>
+    <div class="bar" id="b5"></div>
+    <div class="bar" id="b6"></div>
+  </div>
+
+  <!-- Mic button -->
+  <div class="mic-wrap">
+    <div class="mic-ring" id="micRing"></div>
+    <button class="mic-btn" id="micBtn" title="Click to start/stop">🎙️</button>
+  </div>
+
+  <!-- Conversation -->
+  <div class="conversation" id="conversation"></div>
+
+  <div class="hint">Speak a command — TETR will listen and respond</div>
+
+<script>
+// ── Config ────────────────────────────────────────────────────────────────────
+const SERVER_WS  = 'ws://localhost:3000/ws';
+const APP_KEY    = 'tetr-secret-2024-xK9mPqR7';
+const DEVICE_ID  = 'desktop-demo-' + Math.random().toString(36).slice(2, 6);
+const SAMPLE_RATE = 16000;
+
+// ── State ─────────────────────────────────────────────────────────────────────
+let ws = null;
+let audioCtx = null;
+let processor = null;
+let mediaStream = null;
+let isRecording = false;
+
+// ── DOM refs ──────────────────────────────────────────────────────────────────
+const pill      = document.getElementById('statusPill');
+const dot       = document.getElementById('statusDot');
+const statusTxt = document.getElementById('statusText');
+const micBtn    = document.getElementById('micBtn');
+const micRing   = document.getElementById('micRing');
+const convo     = document.getElementById('conversation');
+const bars      = [0,1,2,3,4,5,6].map(i => document.getElementById('b'+i));
+
+// ── Status helpers ────────────────────────────────────────────────────────────
+function setStatus(state, text) {
+  pill.className = 'status-pill ' + state;
+  statusTxt.textContent = text;
+  dot.className = 'dot' + (state !== 'connected' ? ' pulse' : '');
+}
+
+// ── Conversation bubbles ──────────────────────────────────────────────────────
+function addBubble(role, text) {
+  const div = document.createElement('div');
+  div.className = 'bubble ' + role;
+  div.innerHTML = `<div class="label">${role === 'user' ? 'You' : 'TETR'}</div>${text}`;
+  convo.appendChild(div);
+  convo.scrollTop = convo.scrollHeight;
+}
+
+// ── Audio visualizer ──────────────────────────────────────────────────────────
+function animateBars(active, levels) {
+  bars.forEach((b, i) => {
+    const h = active ? (levels ? Math.max(4, levels[i] * 40) : 4 + Math.random() * 20) : 4;
+    b.style.height = h + 'px';
+    b.style.background = active ? '#44f' : '#222';
+  });
+}
+
+// ── WebSocket ─────────────────────────────────────────────────────────────────
+function connect() {
+  const url = `${SERVER_WS}?deviceId=${DEVICE_ID}&language=en&key=${APP_KEY}`;
+  ws = new WebSocket(url);
+  ws.binaryType = 'arraybuffer';
+
+  ws.onopen = () => {
+    setStatus('connected', 'Connected — click mic to speak');
+    micBtn.disabled = false;
+  };
+
+  ws.onmessage = (ev) => {
+    if (typeof ev.data === 'string') {
+      const msg = JSON.parse(ev.data);
+
+      if (msg.type === 'speech') {
+        setStatus('speaking', 'TETR is speaking…');
+        playPcm(msg.audio);
+      }
+      if (msg.type === 'transcript') {
+        addBubble('user', msg.text);
+        setStatus('thinking', 'Thinking…');
+      }
+      if (msg.type === 'agent_text') {
+        addBubble('agent', msg.text);
+        setStatus('connected', 'Connected — click mic to speak');
+      }
+    }
+  };
+
+  ws.onclose = () => {
+    setStatus('', 'Disconnected — refresh to reconnect');
+    stopMic();
+    setTimeout(connect, 3000); // auto-reconnect
+  };
+
+  ws.onerror = () => setStatus('', 'Connection error');
+}
+
+// ── Mic capture ───────────────────────────────────────────────────────────────
+micBtn.addEventListener('click', async () => {
+  if (!isRecording) {
+    await startMic();
+  } else {
+    stopMic();
+  }
+});
+
+async function startMic() {
+  try {
+    mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+    audioCtx    = new AudioContext({ sampleRate: SAMPLE_RATE });
+    const source = audioCtx.createMediaStreamSource(mediaStream);
+
+    // ScriptProcessorNode: gets raw PCM float32 samples
+    processor = audioCtx.createScriptProcessor(4096, 1, 1);
+    processor.onaudioprocess = (e) => {
+      if (!isRecording || ws?.readyState !== WebSocket.OPEN) return;
+      const float32 = e.inputBuffer.getChannelData(0);
+      const int16   = new Int16Array(float32.length);
+      for (let i = 0; i < float32.length; i++) {
+        int16[i] = Math.max(-32768, Math.min(32767, float32[i] * 32768));
+      }
+      ws.send(int16.buffer);
+
+      // Visualizer
+      const level = float32.reduce((s, v) => s + Math.abs(v), 0) / float32.length;
+      animateBars(true, bars.map(() => level * 2 + Math.random() * 0.05));
+    };
+
+    source.connect(processor);
+    processor.connect(audioCtx.destination);
+
+    isRecording = true;
+    micBtn.classList.add('active');
+    micRing.classList.add('active');
+    micBtn.textContent = '⏹️';
+    setStatus('listening', 'Listening…');
+  } catch (e) {
+    alert('Microphone access denied. Please allow microphone in your browser.');
+  }
+}
+
+function stopMic() {
+  isRecording = false;
+  processor?.disconnect();
+  mediaStream?.getTracks().forEach(t => t.stop());
+  audioCtx?.close();
+  processor = null; mediaStream = null; audioCtx = null;
+  micBtn.classList.remove('active');
+  micRing.classList.remove('active');
+  micBtn.textContent = '🎙️';
+  animateBars(false);
+  setStatus('connected', 'Connected — click mic to speak');
+}
+
+// ── PCM audio playback ────────────────────────────────────────────────────────
+function playPcm(base64) {
+  try {
+    const raw     = atob(base64);
+    const bytes   = new Uint8Array(raw.length);
+    for (let i = 0; i < raw.length; i++) bytes[i] = raw.charCodeAt(i);
+
+    const int16   = new Int16Array(bytes.buffer);
+    const float32 = new Float32Array(int16.length);
+    for (let i = 0; i < int16.length; i++) float32[i] = int16[i] / 32768.0;
+
+    const ctx    = new AudioContext({ sampleRate: 24000 });
+    const buffer = ctx.createBuffer(1, float32.length, 24000);
+    buffer.copyToChannel(float32, 0);
+
+    const src = ctx.createBufferSource();
+    src.buffer = buffer;
+    src.connect(ctx.destination);
+    src.start();
+    src.onended = () => {
+      ctx.close();
+      setStatus('connected', 'Connected — click mic to speak');
+    };
+  } catch (e) {
+    console.error('Playback error:', e);
+  }
+}
+
+// ── Init ──────────────────────────────────────────────────────────────────────
+micBtn.disabled = true;
+connect();
+</script>
+</body>
+</html>
