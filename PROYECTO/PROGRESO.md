@@ -8,10 +8,10 @@
 | Fase 2 | Backend Node.js | 100% ✅ |
 | Fase 3 | App Android | 100% ✅ |
 | Fase 4 | Pipeline Central | 100% ✅ |
-| Fase 5 | Base de Datos | 0% |
+| Fase 5 | Base de Datos | 100% ✅ |
 | Fase 6 | Pruebas | 0% |
 
-**Progreso total: 66%**
+**Progreso total: 83%**
 
 ---
 
@@ -44,8 +44,17 @@
 - ✅ Límite de iteraciones (MAX 8) para prevenir loops infinitos
 - ✅ Manejo de errores y fallbacks en cada acción
 
-### ⬜ FASE 5 — Base de Datos (0%) ⬅ SIGUIENTE
-### ⬜ FASE 6 — Pruebas (0%)
+### ✅ FASE 5 — Base de Datos (100%)
+- ✅ Tabla `users` (device_id, name, language, last_seen)
+- ✅ Tabla `sessions` (id, user_id, started_at, ended_at, actions_count, duration_ms)
+- ✅ Tabla `actions` (user_text, agent_text, action_type, action_payload JSONB)
+- ✅ Tabla `feedback` (rating -1/+1, para mejorar el agente)
+- ✅ Row Level Security en todas las tablas
+- ✅ Vistas: user_stats, top_actions
+- ✅ Trigger: actualiza last_seen automáticamente
+- ✅ Índices en todos los campos de búsqueda frecuente
+
+### ⬜ FASE 6 — Pruebas en dispositivo real (0%) ⬅ SIGUIENTE
 
 ---
 
