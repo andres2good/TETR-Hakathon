@@ -6,101 +6,120 @@ import { withRetry } from '../utils/retry.js';
 
 const anthropic = new Anthropic({ apiKey: env.ANTHROPIC_API_KEY });
 
-const MAX_TOOL_ITERATIONS = 8; // Máximo de acciones por turno
+const MAX_TOOL_ITERATIONS = 10;
 
-// Herramientas que Claude puede usar para controlar el celular
 const TOOLS = [
   {
     name: 'click',
-    description: 'Toca un elemento en la pantalla por su texto o descripción.',
+    description: 'Clicks an element on the page by its visible text, aria-label, or description.',
     input_schema: {
       type: 'object',
       properties: {
-        target: { type: 'string', description: 'Texto o descripción del elemento a tocar. Ej: "botón Enviar", "chat de María"' },
+        target: { type: 'string', description: 'Text or label of the element to click. Must match exactly what is shown in the UI tree.' },
       },
       required: ['target'],
     },
   },
   {
     name: 'set_text',
-    description: 'Escribe texto en el campo actualmente seleccionado o en un campo específico.',
+    description: 'Types text into a field. Use the exact "target" label from the UI tree EDITABLE FIELDS section.',
     input_schema: {
       type: 'object',
       properties: {
-        text:   { type: 'string', description: 'Texto a escribir' },
-        target: { type: 'string', description: 'Campo donde escribir (opcional, si no hay uno seleccionado)' },
+        text:   { type: 'string', description: 'Text to type' },
+        target: { type: 'string', description: 'Exact field label from the UI tree (e.g. "Search", "Subject", "Message Body")' },
       },
       required: ['text'],
     },
   },
   {
     name: 'scroll_up',
-    description: 'Desliza la pantalla hacia arriba.',
+    description: 'Scrolls the page up to see content above.',
     input_schema: { type: 'object', properties: {} },
   },
   {
     name: 'scroll_down',
-    description: 'Desliza la pantalla hacia abajo.',
+    description: 'Scrolls the page down to see more content.',
     input_schema: { type: 'object', properties: {} },
   },
   {
     name: 'open_app',
-    description: 'Abre una aplicación instalada en el celular.',
+    description: 'Opens a website or app in the browser. If the site is already open in a tab, switches to that tab instead of opening a new one.',
     input_schema: {
       type: 'object',
       properties: {
-        appName: { type: 'string', description: 'Nombre de la app. Ej: "WhatsApp", "Spotify", "YouTube", "Teléfono", "Cámara"' },
+        appName: { type: 'string', description: 'App or site name. E.g. "YouTube Music", "Gmail", "WhatsApp", "Spotify", "Twitter", "Netflix"' },
       },
       required: ['appName'],
     },
   },
   {
+    name: 'navigate_to',
+    description: 'Navigates the current tab to a specific URL. Use this instead of open_app when you have an exact URL.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        url: { type: 'string', description: 'Full URL to navigate to, e.g. "https://youtube.com/watch?v=..."' },
+      },
+      required: ['url'],
+    },
+  },
+  {
+    name: 'close_tab',
+    description: 'Closes the current browser tab.',
+    input_schema: { type: 'object', properties: {} },
+  },
+  {
+    name: 'switch_tab',
+    description: 'Switches to a browser tab that matches the given title or URL fragment.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        query: { type: 'string', description: 'Part of the tab title or URL to match. E.g. "Gmail", "YouTube", "GitHub"' },
+      },
+      required: ['query'],
+    },
+  },
+  {
     name: 'press_back',
-    description: 'Presiona el botón de retroceso (volver atrás).',
+    description: 'Goes back to the previous page.',
     input_schema: { type: 'object', properties: {} },
   },
   {
     name: 'press_home',
-    description: 'Va a la pantalla de inicio del celular.',
+    description: 'Opens a new blank tab (home).',
     input_schema: { type: 'object', properties: {} },
   },
   {
     name: 'volume_up',
-    description: 'Sube el volumen del celular.',
+    description: 'Increases the volume.',
     input_schema: {
       type: 'object',
       properties: {
-        steps: { type: 'number', description: 'Cuántos pasos subir (default: 2)' },
+        steps: { type: 'number', description: 'Steps to increase (default: 2)' },
       },
     },
   },
   {
     name: 'volume_down',
-    description: 'Baja el volumen del celular.',
+    description: 'Decreases the volume.',
     input_schema: {
       type: 'object',
       properties: {
-        steps: { type: 'number', description: 'Cuántos pasos bajar (default: 2)' },
+        steps: { type: 'number', description: 'Steps to decrease (default: 2)' },
       },
     },
   },
   {
     name: 'request_screenshot',
-    description: 'Pide una captura de pantalla actualizada para ver mejor qué hay en la pantalla.',
+    description: 'Takes a fresh screenshot to see the current state of the page. Use this after opening apps or after actions that change the page.',
     input_schema: { type: 'object', properties: {} },
   },
 ];
 
 /**
- * Genera la respuesta del agente con loop completo de herramientas.
- *
- * El ciclo correcto de tool use de Anthropic:
- *   1. Mandamos mensajes → Claude responde con tool_use
- *   2. Ejecutamos la herramienta en el celular
- *   3. Esperamos que la pantalla cambie
- *   4. Mandamos tool_result con la nueva pantalla
- *   5. Claude continúa → puede usar más herramientas o dar respuesta final
- *   6. Repetir hasta que Claude dé respuesta de texto o alcancemos MAX_TOOL_ITERATIONS
+ * Generates the agent response with full tool use loop.
+ * Each tool call gets its own fresh screen context.
  */
 export async function generateResponse({
   sessionId,
@@ -111,13 +130,11 @@ export async function generateResponse({
   userName,
   onTextChunk,
   onToolCall,
-  getLatestScreenContext, // función que devuelve { uiTree, screenshot } actualizado
+  getLatestScreenContext,
 }) {
   const log = sessionLogger(sessionId);
 
-  // Copiar mensajes para no mutar session.messages (los screenshots no deben persistir en el historial)
   const workingMessages = messages.map((m, i) => {
-    // Solo el último mensaje del usuario necesita el contexto de pantalla — copiarlo
     if (i === messages.length - 1 && m.role === 'user' && (uiTree || screenshot)) {
       const copy = { ...m };
       attachScreenContext(copy, uiTree, screenshot);
@@ -126,13 +143,12 @@ export async function generateResponse({
     return m;
   });
 
-  log.debug('[Claude] Generando respuesta', { messageCount: messages.length, hasScreenshot: !!screenshot });
+  log.debug('[Claude] Generating response', { messageCount: messages.length, hasScreenshot: !!screenshot });
 
   return await withRetry(async () => {
     let finalText = '';
     let iterations = 0;
 
-    // ─── Loop de herramientas ─────────────────────────────────────────────────
     while (iterations < MAX_TOOL_ITERATIONS) {
       iterations++;
 
@@ -146,35 +162,53 @@ export async function generateResponse({
 
       if (text) finalText += text;
 
-      // Sin herramientas — Claude terminó
       if (stopReason === 'end_turn' || toolCalls.length === 0) {
-        log.debug('[Claude] Respuesta final', { iterations, chars: finalText.length });
+        log.debug('[Claude] Final response', { iterations, chars: finalText.length });
         break;
       }
 
-      // ─── Ejecutar herramientas y recopilar resultados ─────────────────────
+      // Execute each tool and get fresh screen context after each one
       const toolResults = [];
 
       for (const tool of toolCalls) {
-        log.info('[Claude] Herramienta', { name: tool.name, input: tool.input, iteration: iterations });
+        log.info('[Claude] Tool call', { name: tool.name, input: tool.input, iteration: iterations });
 
         let result = 'ok';
         try {
           result = await onToolCall?.(tool.name, tool.input, tool.id) ?? 'ok';
         } catch (e) {
           result = `error: ${e.message}`;
-          log.error('[Claude] Herramienta falló', { name: tool.name, error: e.message });
+          log.error('[Claude] Tool failed', { name: tool.name, error: e.message });
         }
 
-        toolResults.push({
-          type: 'tool_result',
-          tool_use_id: tool.id,
-          content: typeof result === 'string' ? result : JSON.stringify(result),
-        });
+        // Get fresh screen state after EVERY tool call
+        const latestContext = await getLatestScreenContext?.();
+        let content = typeof result === 'string' ? result : JSON.stringify(result);
+
+        if (latestContext) {
+          const screenText = buildScreenContext(latestContext.uiTree, latestContext.screenshot);
+          content += `\n\n${screenText}`;
+        }
+
+        // If screenshot available, include it as vision content
+        if (latestContext?.screenshot) {
+          toolResults.push({
+            type: 'tool_result',
+            tool_use_id: tool.id,
+            content: [
+              { type: 'text', text: content },
+              { type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data: latestContext.screenshot } },
+            ],
+          });
+        } else {
+          toolResults.push({
+            type: 'tool_result',
+            tool_use_id: tool.id,
+            content,
+          });
+        }
       }
 
-      // ─── Agregar la respuesta de Claude + resultados al historial ─────────
-      // (Anthropic requiere que el historial incluya el mensaje del asistente con tool_use)
       workingMessages.push({
         role: 'assistant',
         content: [
@@ -188,36 +222,20 @@ export async function generateResponse({
         ],
       });
 
-      // Agregar estado actualizado de pantalla a los tool_results
-      const latestContext = await getLatestScreenContext?.();
-      if (latestContext) {
-        const screenText = buildScreenContext(latestContext.uiTree, latestContext.screenshot);
-        // Adjuntar contexto al primer tool_result
-        toolResults[0].content += `\n\n${screenText}`;
-
-        if (latestContext.screenshot) {
-          toolResults[0].content = [
-            { type: 'text', text: toolResults[0].content },
-            { type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data: latestContext.screenshot } },
-          ];
-        }
-      }
-
       workingMessages.push({ role: 'user', content: toolResults });
 
-      // Si stop_reason fue tool_use, continuamos el loop
       if (stopReason !== 'tool_use') break;
     }
 
     if (iterations >= MAX_TOOL_ITERATIONS) {
-      log.warn('[Claude] Alcanzó límite de iteraciones', { max: MAX_TOOL_ITERATIONS });
+      log.warn('[Claude] Reached iteration limit', { max: MAX_TOOL_ITERATIONS });
     }
 
     return finalText;
   }, { name: 'Claude API', maxAttempts: 2 });
 }
 
-// ─── Un turno del stream ──────────────────────────────────────────────────────
+// ── Single streaming turn ─────────────────────────────────────────────────────
 
 async function streamOneTurn({ log, messages, language, userName, onTextChunk }) {
   let text = '';
@@ -227,8 +245,8 @@ async function streamOneTurn({ log, messages, language, userName, onTextChunk })
 
   const stream = anthropic.messages.stream({
     model: env.CLAUDE_MODEL,
-    max_tokens: 1024,
-    temperature: 0.3,
+    max_tokens: 300,
+    temperature: 0.2,
     system: [{ type: 'text', text: buildSystemPrompt({ language, userName }), cache_control: { type: 'ephemeral' } }],
     messages,
     tools: TOOLS,
@@ -242,7 +260,7 @@ async function streamOneTurn({ log, messages, language, userName, onTextChunk })
 
     if (event.type === 'content_block_delta' && event.delta.type === 'text_delta') {
       text += event.delta.text;
-      onTextChunk?.(event.delta.text);
+      await onTextChunk?.(event.delta.text);
     }
 
     if (event.type === 'content_block_start' && event.content_block.type === 'tool_use') {
@@ -258,7 +276,7 @@ async function streamOneTurn({ log, messages, language, userName, onTextChunk })
         pendingTool.input = JSON.parse(pendingTool.inputBuffer || '{}');
         toolCalls.push(pendingTool);
       } catch (e) {
-        log.error('[Claude] Error parseando input de herramienta', { error: e.message });
+        log.error('[Claude] Error parsing tool input', { error: e.message });
       }
       pendingTool = null;
     }
@@ -267,7 +285,7 @@ async function streamOneTurn({ log, messages, language, userName, onTextChunk })
   return { text, toolCalls, stopReason };
 }
 
-// ─── Helpers ──────────────────────────────────────────────────────────────────
+// ── Helpers ───────────────────────────────────────────────────────────────────
 
 function attachScreenContext(userMsg, uiTree, screenshot) {
   const screenContext = buildScreenContext(uiTree, screenshot);
@@ -286,9 +304,9 @@ function attachScreenContext(userMsg, uiTree, screenshot) {
 }
 
 function buildScreenContext(uiTree, screenshot) {
-  const parts = ['\n\n--- PANTALLA ACTUAL ---'];
-  if (uiTree) parts.push(`Elementos visibles:\n${uiTree}`);
-  if (!uiTree && screenshot) parts.push('(Ver imagen adjunta)');
-  parts.push('--- FIN ---');
+  const parts = ['\n\n--- CURRENT SCREEN ---'];
+  if (uiTree) parts.push(`Visible elements:\n${uiTree}`);
+  if (!uiTree && screenshot) parts.push('(See attached image)');
+  parts.push('--- END ---');
   return parts.join('\n');
 }

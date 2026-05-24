@@ -19,15 +19,20 @@ const activeSessions = new Map();
 
 // Tiempo de espera tras ejecutar una acción para que la pantalla se actualice
 const ACTION_SETTLE_MS = {
-  open_app: 1500,
-  click: 600,
-  set_text: 400,
-  scroll_up: 300,
-  scroll_down: 300,
-  press_back: 500,
-  press_home: 500,
-  request_screenshot: 800,
-  default: 400,
+  open_app: 4000,      // pages need time to load
+  navigate_to: 3000,   // navigation also needs time
+  close_tab: 500,
+  switch_tab: 600,
+  new_tab: 1500,
+  click: 900,
+  set_text: 700,
+  scroll_up: 350,
+  scroll_down: 350,
+  press_back: 800,
+  press_home: 600,
+  press_enter: 600,
+  request_screenshot: 1200,
+  default: 600,
 };
 
 // ─── Crear sesión nueva ───────────────────────────────────────────────────────
@@ -51,6 +56,7 @@ export async function createSession({ ws, deviceId, language = 'en' }) {
     lastScreenshot: null,
     actionsCount: 0,
     isProcessing: false,
+    generationId: 0,
     deepgram: null,
     startTime: Date.now(),
   };
@@ -78,7 +84,8 @@ export async function createSession({ ws, deviceId, language = 'en' }) {
 
 export function handleAudioChunk(sessionId, audioChunk) {
   const session = activeSessions.get(sessionId);
-  if (!session || session.isProcessing) return;
+  if (!session) return;
+  // Always send audio — lets user barge in at any time
   session.deepgram?.sendAudio(audioChunk);
 }
 
@@ -102,12 +109,17 @@ export function handleScreenshot(sessionId, screenshotBase64) {
 
 async function handleUserSpeech(sessionId, text) {
   const session = activeSessions.get(sessionId);
-  if (!session || session.isProcessing) return;
+  if (!session) return;
+
+  // Interrupt any in-flight generation — bump the generation ID so stale callbacks bail out
+  session.generationId++;
+  const myGen = session.generationId;
+  session.isProcessing = true;
+  session.deepgram?.resetAccumulator();
 
   const log = sessionLogger(sessionId);
-  log.info('[Session] Usuario dijo', { text });
+  log.info('[Session] Usuario dijo', { text, gen: myGen });
 
-  session.isProcessing = true;
   sendToDevice(sessionId, WS_MESSAGES.TRANSCRIPT, { text });
   session.messages.push({ role: 'user', content: text });
 
@@ -139,7 +151,8 @@ async function handleUserSpeech(sessionId, text) {
     }
 
     // ─── Respuesta completa con Claude + loop de herramientas ─────────────────
-    let agentText = '';
+    let agentText = '';      // current TTS buffer (reset after each spoken chunk)
+    let fullAgentText = '';  // full text for history (never reset)
     const pendingActions = [];
 
     await generateResponse({
@@ -150,23 +163,29 @@ async function handleUserSpeech(sessionId, text) {
       language: session.language,
       userName: session.user?.name,
 
-      // Texto en stream — hablar por oraciones para reducir latencia
       onTextChunk: async (chunk) => {
+        if (session.generationId !== myGen) return; // user interrupted
         agentText += chunk;
-        if (/[.!?]/.test(chunk) && agentText.length > 10) {
-          await speakToUser(sessionId, agentText);
+        fullAgentText += chunk;
+
+        // Fire TTS only on sentence-ending punctuation followed by space or end-of-chunk.
+        // Require minimum 12 chars to avoid firing on "Dr.", "3.5", etc.
+        const endsWithSentence = /[.!?](\s|$)/.test(chunk) || /[.!?]$/.test(agentText.trim());
+        if (endsWithSentence && agentText.trim().length >= 12) {
+          const toSpeak = agentText.trim();
           agentText = '';
+          await speakToUser(sessionId, toSpeak, myGen);
         }
       },
 
       // Herramienta — ejecutar en el celular y esperar
       onToolCall: async (toolName, toolInput, toolId) => {
+        if (session.generationId !== myGen) return 'interrupted';
         const action = { type: toolName, ...toolInput };
         pendingActions.push(action);
         sendToDevice(sessionId, WS_MESSAGES.ACTION, action);
         session.actionsCount++;
 
-        // Esperar a que la pantalla se actualice
         const wait = ACTION_SETTLE_MS[toolName] ?? ACTION_SETTLE_MS.default;
         await new Promise(r => setTimeout(r, wait));
 
@@ -180,14 +199,14 @@ async function handleUserSpeech(sessionId, text) {
       }),
     });
 
-    // Texto sobrante
+    // Remaining text that didn't hit a sentence boundary
     if (agentText.trim()) {
       await speakToUser(sessionId, agentText.trim());
     }
 
-    // Guardar en historial
-    const fullAgentText = agentText || pendingActions.map(a => a.type).join(', ');
-    session.messages.push({ role: 'assistant', content: fullAgentText });
+    // Use full accumulated text for history; fall back to action list
+    if (!fullAgentText.trim()) fullAgentText = pendingActions.map(a => a.type).join(', ');
+    session.messages.push({ role: 'assistant', content: fullAgentText.trim() });
 
     await logAction({
       userId: session.user?.id,
@@ -207,7 +226,7 @@ async function handleUserSpeech(sessionId, text) {
       : 'I had an issue. Can you repeat that?';
     await speakToUser(sessionId, fallback);
   } finally {
-    session.isProcessing = false;
+    if (session.generationId === myGen) session.isProcessing = false;
   }
 }
 
@@ -219,19 +238,24 @@ function language(session, es, en) {
 
 // ─── Hablarle al usuario ──────────────────────────────────────────────────────
 
-async function speakToUser(sessionId, text) {
+async function speakToUser(sessionId, text, genId) {
   const session = activeSessions.get(sessionId);
   if (!session || !text?.trim()) return;
+  if (genId !== undefined && session.generationId !== genId) return; // interrupted
 
   const log = sessionLogger(sessionId);
+
+  // Always send text immediately — extension can speak it via browser TTS
+  sendToDevice(sessionId, WS_MESSAGES.AGENT_TEXT, { text });
+
   try {
     const audio = await textToSpeech({ text, language: session.language, sessionId });
     if (audio) {
+      // High-quality Cartesia audio — send it so extension upgrades to it
       sendToDevice(sessionId, WS_MESSAGES.SPEECH, { audio: audio.toString('base64') });
-      sendToDevice(sessionId, WS_MESSAGES.AGENT_TEXT, { text });
     }
   } catch (error) {
-    log.error('[Session] Error TTS', { error: error.message });
+    log.debug('[Session] TTS no disponible, usando voz del navegador', { error: error.message });
   }
 }
 

@@ -1,20 +1,19 @@
 /**
- * Detecta la intención del usuario antes de llamar a Claude.
- * Para comandos simples (subir volumen, ir a inicio) no necesitamos gastar tokens.
+ * Detects simple intents before calling Claude.
+ * For one-word commands we don't need to spend tokens.
  */
 
 const SIMPLE_INTENTS = [
-  { patterns: [/sube el volumen/i, /más volumen/i, /volume up/i], action: 'volume_up', params: { steps: 3 } },
-  { patterns: [/baja el volumen/i, /menos volumen/i, /volume down/i], action: 'volume_down', params: { steps: 3 } },
-  { patterns: [/inicio|pantalla principal|home screen/i, /^(?:ir al?|volver al?) inicio/i], action: 'press_home', params: {} },
-  { patterns: [/volver|regresar|atrás|go back/i], action: 'press_back', params: {} },
-  { patterns: [/scroll (arriba|hacia arriba)|desliza arriba/i], action: 'scroll_up', params: {} },
-  { patterns: [/scroll (abajo|hacia abajo)|desliza abajo/i], action: 'scroll_down', params: {} },
+  { patterns: [/\b(volume up|louder|raise volume|turn up)\b/i, /\b(sube el volumen|más volumen)\b/i], action: 'volume_up', params: { steps: 3 } },
+  { patterns: [/\b(volume down|quieter|lower volume|turn down)\b/i, /\b(baja el volumen|menos volumen)\b/i], action: 'volume_down', params: { steps: 3 } },
+  { patterns: [/\b(scroll up|page up|swipe up)\b/i, /\b(desliza arriba|scroll arriba)\b/i], action: 'scroll_up', params: {} },
+  { patterns: [/\b(scroll down|page down|swipe down)\b/i, /\b(desliza abajo|scroll abajo)\b/i], action: 'scroll_down', params: {} },
+  { patterns: [/^(go back|back|press back|volver|regresar|atrás)$/i], action: 'press_back', params: {} },
+  { patterns: [/^(close tab|close this tab|cierra la pestaña|cierra esta pestaña)$/i], action: 'close_tab', params: {} },
 ];
 
 /**
- * Devuelve una acción directa si el texto es un comando simple,
- * o null si necesita pasar por Claude.
+ * Returns a direct action if text is a simple command, otherwise null.
  */
 export function detectSimpleIntent(text) {
   const normalized = text.trim().toLowerCase();

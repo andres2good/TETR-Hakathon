@@ -1,4 +1,4 @@
-// sidepanel.js — NAVI siempre escuchando
+// sidepanel.js — NAVI always listening
 
 const SERVER_WS   = 'ws://localhost:3000/ws';
 const APP_KEY     = 'tetr-secret-2024-xK9mPqR7';
@@ -6,18 +6,60 @@ const DEVICE_ID   = 'navi-chrome-' + Math.random().toString(36).slice(2, 6);
 const SAMPLE_RATE = 16000;
 
 const APP_URLS = {
-  youtube: 'https://youtube.com',  gmail: 'https://mail.google.com',
-  whatsapp: 'https://web.whatsapp.com', google: 'https://google.com',
-  maps: 'https://maps.google.com', spotify: 'https://open.spotify.com',
-  twitter: 'https://twitter.com',  instagram: 'https://instagram.com',
-  facebook: 'https://facebook.com', github: 'https://github.com',
-  netflix: 'https://netflix.com',   amazon: 'https://amazon.com',
-  reddit: 'https://reddit.com',     twitch: 'https://twitch.tv',
+  youtube: 'https://youtube.com',
+  'youtube music': 'https://music.youtube.com',
+  gmail: 'https://mail.google.com',
+  whatsapp: 'https://web.whatsapp.com',
+  google: 'https://google.com',
+  maps: 'https://maps.google.com',
+  spotify: 'https://open.spotify.com',
+  twitter: 'https://twitter.com',
+  instagram: 'https://instagram.com',
+  facebook: 'https://facebook.com',
+  github: 'https://github.com',
+  netflix: 'https://netflix.com',
+  amazon: 'https://amazon.com',
+  reddit: 'https://reddit.com',
+  twitch: 'https://twitch.tv',
+  linkedin: 'https://linkedin.com',
+  notion: 'https://notion.so',
 };
 
-// ── Estado ────────────────────────────────────────────────────────────────────
+// ── State ─────────────────────────────────────────────────────────────────────
 let ws = null, audioCtx = null, processor = null, stream = null;
 let listening = false;
+
+// ── Speech queue — prevents simultaneous playback ─────────────────────────────
+const speechQueue = [];
+let isSpeaking = false;
+let stopCurrentPlayback = null;
+
+function enqueueSpeech(b64) {
+  speechQueue.push(b64);
+  if (!isSpeaking) drainSpeechQueue();
+}
+
+function interruptSpeech() {
+  speechQueue.length = 0;
+  if (stopCurrentPlayback) { stopCurrentPlayback(); stopCurrentPlayback = null; }
+  isSpeaking = false;
+  resumeMic();
+  setStatus('listening', 'Listening…');
+}
+
+async function drainSpeechQueue() {
+  if (speechQueue.length === 0) {
+    isSpeaking = false;
+    resumeMic();
+    setStatus('listening', 'Listening…');
+    return;
+  }
+  isSpeaking = true;
+  pauseMic();
+  setStatus('speaking', 'Speaking…');
+  await playPcm(speechQueue.shift());
+  drainSpeechQueue();
+}
 
 // ── DOM ───────────────────────────────────────────────────────────────────────
 const pill      = document.getElementById('pill');
@@ -28,7 +70,7 @@ const ring      = document.getElementById('ring');
 const convo     = document.getElementById('convo');
 const bars      = [0,1,2,3,4,5,6,7,8].map(i => document.getElementById('b'+i));
 
-// ── Helpers de UI ─────────────────────────────────────────────────────────────
+// ── UI helpers ────────────────────────────────────────────────────────────────
 function setStatus(state, text) {
   pill.className = 'status-pill ' + state;
   statusTxt.textContent = text;
@@ -44,7 +86,7 @@ function addBubble(role, text) {
 }
 
 function animBars(on, level = 0) {
-  bars.forEach((b, i) => {
+  bars.forEach(b => {
     const h = on ? Math.max(4, level * 80 + Math.random() * 12) : 4;
     b.style.height = h + 'px';
     b.style.background = on ? '#5566ff' : '#1a1a2e';
@@ -60,7 +102,6 @@ function connect() {
   ws.onopen = () => {
     setStatus('connected', 'Connected');
     micBtn.disabled = false;
-    // Arrancar micrófono automáticamente
     startMic();
     sendPageContext();
   };
@@ -71,14 +112,11 @@ function connect() {
 
     switch (msg.type) {
       case 'speech':
-        setStatus('speaking', 'Speaking…');
-        pauseMic();
-        await playPcm(msg.audio);
-        resumeMic();
-        setStatus('listening', 'Listening…');
+        enqueueSpeech(msg.audio);
         break;
 
       case 'transcript':
+        interruptSpeech();
         addBubble('user', msg.text);
         setStatus('thinking', 'Thinking…');
         sendPageContext();
@@ -93,12 +131,39 @@ function connect() {
       case 'scroll_up':
       case 'scroll_down':
       case 'press_back':
+      case 'press_enter':
         executeOnPage(msg.type, msg);
         break;
 
+      case 'navigate_to':
+        navigateCurrentTab(msg.url || '');
+        break;
+
+      case 'close_tab':
+        closeCurrentTab();
+        break;
+
+      case 'new_tab':
+        chrome.tabs.create({ url: msg.url || 'about:blank' });
+        setTimeout(sendPageContext, 1500);
+        break;
+
+      case 'switch_tab':
+        switchToTab(msg.query || '');
+        break;
+
+      case 'request_screenshot':
+        // Server asked for a fresh screenshot — send it immediately
+        sendPageContext();
+        break;
+
       case 'open_app':
-      case 'press_home':
         openApp(msg.appName || '');
+        break;
+
+      case 'press_home':
+        chrome.tabs.create({ url: 'chrome://newtab' });
+        setTimeout(sendPageContext, 500);
         break;
     }
   };
@@ -111,7 +176,7 @@ function connect() {
   };
 }
 
-// ── Micrófono siempre activo ──────────────────────────────────────────────────
+// ── Microphone ───────────────────────────────────────────────────────────────
 
 micBtn.addEventListener('click', () => {
   listening ? stopMic() : startMic();
@@ -120,20 +185,41 @@ micBtn.addEventListener('click', () => {
 async function startMic() {
   if (listening) return;
   try {
-    stream   = await navigator.mediaDevices.getUserMedia({ audio: true });
+    stream   = await navigator.mediaDevices.getUserMedia({
+      audio: {
+        echoCancellation: true,
+        noiseSuppression: true,
+        autoGainControl: true,
+      }
+    });
     audioCtx = new AudioContext({ sampleRate: SAMPLE_RATE });
+    await audioCtx.resume();
+    audioCtx.onstatechange = () => {
+      if (audioCtx.state === 'suspended') audioCtx.resume();
+    };
+
     const src = audioCtx.createMediaStreamSource(stream);
     processor = audioCtx.createScriptProcessor(4096, 1, 1);
 
     processor.onaudioprocess = (e) => {
-      if (!listening || ws?.readyState !== WebSocket.OPEN) return;
       const f32 = e.inputBuffer.getChannelData(0);
+      const level = f32.reduce((s, v) => s + Math.abs(v), 0) / f32.length;
+
+      // Barge-in: user speaks while NAVI is playing → interrupt immediately
+      if (isSpeaking && level > 0.07) {
+        interruptSpeech();
+        return;
+      }
+
+      if (!listening || ws?.readyState !== WebSocket.OPEN) {
+        animBars(false);
+        return;
+      }
+
       const i16 = new Int16Array(f32.length);
       for (let i = 0; i < f32.length; i++)
         i16[i] = Math.max(-32768, Math.min(32767, f32[i] * 32768));
       ws.send(i16.buffer);
-
-      const level = f32.reduce((s, v) => s + Math.abs(v), 0) / f32.length;
       animBars(true, level);
     };
 
@@ -151,7 +237,6 @@ async function startMic() {
   }
 }
 
-// Pausa el mic mientras NAVI habla (para no mandarse a si mismo como input)
 function pauseMic()  { listening = false; animBars(false); }
 function resumeMic() { if (stream) listening = true; }
 
@@ -168,25 +253,73 @@ function stopMic() {
   setStatus('connected', 'Mic off — click to restart');
 }
 
-// ── Ejecutar acciones en la página ───────────────────────────────────────────
+// ── Page actions ─────────────────────────────────────────────────────────────
 
 function executeOnPage(action, params) {
   chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
     if (!tabs[0]) return;
     chrome.tabs.sendMessage(tabs[0].id, { type: 'EXECUTE_ACTION', action, params },
-      () => { setTimeout(sendPageContext, 700); }
+      () => { setTimeout(sendPageContext, 800); }
     );
   });
 }
 
+// Open an app — checks if a tab with that URL already exists first
 function openApp(appName) {
-  const url = APP_URLS[appName.toLowerCase()]
+  const normalized = appName.toLowerCase().trim();
+  const url = APP_URLS[normalized]
+    || (normalized.startsWith('http') ? normalized : null)
     || `https://www.google.com/search?q=${encodeURIComponent(appName)}`;
-  chrome.tabs.create({ url });
-  setTimeout(sendPageContext, 2000);
+
+  chrome.tabs.query({}, (tabs) => {
+    // Look for an existing tab that matches this URL
+    const existing = tabs.find(t => t.url && t.url.startsWith(url.replace(/\/$/, '')));
+    if (existing) {
+      // Switch to the existing tab instead of opening a new one
+      chrome.tabs.update(existing.id, { active: true });
+      chrome.windows.update(existing.windowId, { focused: true });
+      setTimeout(sendPageContext, 800);
+    } else {
+      chrome.tabs.create({ url });
+      setTimeout(sendPageContext, 3000);
+    }
+  });
 }
 
-// ── Contexto de pantalla ──────────────────────────────────────────────────────
+function navigateCurrentTab(url) {
+  if (!url) return;
+  chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+    if (!tabs[0]) return;
+    chrome.tabs.update(tabs[0].id, { url });
+    setTimeout(sendPageContext, 2500);
+  });
+}
+
+function closeCurrentTab() {
+  chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+    if (!tabs[0]) return;
+    chrome.tabs.remove(tabs[0].id);
+    setTimeout(sendPageContext, 500);
+  });
+}
+
+function switchToTab(query) {
+  if (!query) return;
+  const q = query.toLowerCase();
+  chrome.tabs.query({}, (tabs) => {
+    const match = tabs.find(t =>
+      (t.title || '').toLowerCase().includes(q) ||
+      (t.url || '').toLowerCase().includes(q)
+    );
+    if (match) {
+      chrome.tabs.update(match.id, { active: true });
+      chrome.windows.update(match.windowId, { focused: true });
+      setTimeout(sendPageContext, 600);
+    }
+  });
+}
+
+// ── Screen context ────────────────────────────────────────────────────────────
 
 async function sendPageContext() {
   try {
@@ -205,7 +338,7 @@ async function sendPageContext() {
 
 function captureTab() {
   return new Promise(resolve => {
-    chrome.tabs.captureVisibleTab(null, { format: 'jpeg', quality: 55 },
+    chrome.tabs.captureVisibleTab(null, { format: 'jpeg', quality: 60 },
       url => resolve(chrome.runtime.lastError ? null : url)
     );
   });
@@ -215,7 +348,7 @@ function wsSend(obj) {
   if (ws?.readyState === WebSocket.OPEN) ws.send(JSON.stringify(obj));
 }
 
-// ── Reproducir audio ──────────────────────────────────────────────────────────
+// ── Audio playback ────────────────────────────────────────────────────────────
 
 function playPcm(b64) {
   return new Promise(resolve => {
@@ -233,17 +366,20 @@ function playPcm(b64) {
       const src = ctx.createBufferSource();
       src.buffer = buf;
       src.connect(ctx.destination);
+
+      const done = () => { stopCurrentPlayback = null; ctx.close(); resolve(); };
+      stopCurrentPlayback = () => { try { src.stop(); } catch(e) {} done(); };
       src.start();
-      src.onended = () => { ctx.close(); resolve(); };
-    } catch (e) { resolve(); }
+      src.onended = done;
+    } catch (e) { stopCurrentPlayback = null; resolve(); }
   });
 }
 
-// ── Mandar pantalla cada 5 segundos ──────────────────────────────────────────
+// ── Send page context every 6 seconds ────────────────────────────────────────
 
 setInterval(() => {
   if (ws?.readyState === WebSocket.OPEN) sendPageContext();
-}, 5000);
+}, 6000);
 
 // ── Init ──────────────────────────────────────────────────────────────────────
 connect();

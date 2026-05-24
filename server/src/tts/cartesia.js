@@ -27,7 +27,7 @@ export async function textToSpeech({ text, language = 'es', sessionId }) {
         language,
         output_format: {
           container: 'raw',
-          encoding: 'pcm_s16le',  // PCM 16-bit — compatible con Android AudioTrack
+          encoding: 'pcm_s16le',
           sample_rate: 24000,
         },
       }),
