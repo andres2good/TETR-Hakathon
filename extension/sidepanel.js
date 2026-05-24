@@ -58,6 +58,8 @@ async function drainSpeechQueue() {
   pauseMic();
   setStatus('speaking', 'Speaking…');
   await playPcm(speechQueue.shift());
+  // Natural breath between sentences (only if more chunks are queued)
+  if (speechQueue.length > 0) await new Promise(r => setTimeout(r, 220));
   drainSpeechQueue();
 }
 

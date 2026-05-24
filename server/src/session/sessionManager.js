@@ -19,22 +19,22 @@ const activeSessions = new Map();
 
 // Tiempo de espera tras ejecutar una acción para que la pantalla se actualice
 const ACTION_SETTLE_MS = {
-  open_app: 4000,      // pages need time to load
-  navigate_to: 3000,   // navigation also needs time
-  close_tab: 500,
-  switch_tab: 600,
-  new_tab: 1500,
-  click: 900,
-  set_text: 700,
-  scroll_up: 350,
-  scroll_down: 350,
-  press_back: 800,
-  press_home: 600,
-  press_enter: 600,
-  press_key: 400,
-  clear_field: 200,
-  request_screenshot: 1500,
-  default: 600,
+  open_app:           4500,  // pages need time to load + time for extension to send new UI tree
+  navigate_to:        3500,
+  close_tab:           500,
+  switch_tab:          800,
+  new_tab:            1500,
+  click:               900,
+  set_text:            700,
+  scroll_up:           350,
+  scroll_down:         350,
+  press_back:         1200,
+  press_home:          600,
+  press_enter:         800,
+  press_key:           500,
+  clear_field:         200,
+  request_screenshot: 1800,  // extension needs time to capture + send
+  default:             700,
 };
 
 // ─── Crear sesión nueva ───────────────────────────────────────────────────────
@@ -180,7 +180,7 @@ async function handleUserSpeech(sessionId, text) {
         }
       },
 
-      // Herramienta — ejecutar en el celular y esperar
+      // Execute tool on device and wait for the page to settle
       onToolCall: async (toolName, toolInput, toolId) => {
         if (session.generationId !== myGen) return 'interrupted';
         const action = { type: toolName, ...toolInput };
@@ -191,7 +191,13 @@ async function handleUserSpeech(sessionId, text) {
         const wait = ACTION_SETTLE_MS[toolName] ?? ACTION_SETTLE_MS.default;
         await new Promise(r => setTimeout(r, wait));
 
-        return { success: true, action: toolName };
+        // For navigation actions, tell Claude the page may still be loading
+        // and that it MUST call request_screenshot before doing anything else.
+        if (['open_app', 'navigate_to', 'new_tab', 'press_back'].includes(toolName)) {
+          return 'Navigation started. Call request_screenshot now to verify the page loaded before taking any other action.';
+        }
+
+        return 'ok';
       },
 
       // Devolver el estado más reciente de la pantalla después de cada acción
@@ -247,17 +253,26 @@ async function speakToUser(sessionId, text, genId) {
 
   const log = sessionLogger(sessionId);
 
-  // Always send text immediately — extension can speak it via browser TTS
   sendToDevice(sessionId, WS_MESSAGES.AGENT_TEXT, { text });
 
   try {
     const audio = await textToSpeech({ text, language: session.language, sessionId });
-    if (audio) {
-      // High-quality Cartesia audio — send it so extension upgrades to it
-      sendToDevice(sessionId, WS_MESSAGES.SPEECH, { audio: audio.toString('base64') });
-    }
+    if (!audio) return;
+
+    sendToDevice(sessionId, WS_MESSAGES.SPEECH, { audio: audio.toString('base64') });
+
+    // Wait for the audio to finish playing before letting Claude continue.
+    // PCM s16le at 24 kHz = 48 000 bytes/second.
+    // Cap at 7s so a runaway audio clip can't hang the session.
+    const playbackMs = Math.min(Math.ceil((audio.length / 48000) * 1000), 7000);
+    const paddingMs  = 350;
+    if (genId !== undefined && session.generationId !== genId) return;
+    await new Promise(r => setTimeout(r, playbackMs + paddingMs));
+    // Re-check after the wait in case the user spoke during playback
+    if (genId !== undefined && session.generationId !== genId) return;
+
   } catch (error) {
-    log.debug('[Session] TTS no disponible, usando voz del navegador', { error: error.message });
+    log.debug('[Session] TTS error', { error: error.message });
   }
 }
 
