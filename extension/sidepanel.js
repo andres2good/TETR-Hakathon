@@ -122,7 +122,7 @@ async function handleAuth() {
       errEl.textContent = 'Account created! Opening plans page…';
       btn.disabled = false;
       switchTab('login');
-      chrome.tabs.create({ url: WEBSITE_URL + '#pricing' });
+      chrome.tabs.create({ url: WEBSITE_URL });
       return;
     }
 
@@ -134,7 +134,7 @@ async function handleAuth() {
 
     // Signup with immediate session (email confirmation disabled) — go buy a plan
     if (authMode === 'signup') {
-      chrome.tabs.create({ url: WEBSITE_URL + '#pricing' });
+      chrome.tabs.create({ url: WEBSITE_URL });
       showScreen('plans');
       return;
     }
