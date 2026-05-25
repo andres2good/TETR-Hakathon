@@ -7,7 +7,7 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBh
 
 
 const WEBSITE_URL = 'https://echolocation.squarefire.com.mx';
-const SERVER_WS   = 'ws://localhost:3000/ws';
+const SERVER_WS   = 'wss://tetr-hakathon-production.up.railway.app/ws';
 const APP_KEY     = 'tetr-secret-2024-xK9mPqR7';
 const DEVICE_ID   = 'echo-chrome-' + Math.random().toString(36).slice(2, 6);
 const SAMPLE_RATE = 16000;
