@@ -2,7 +2,7 @@
 export const SESSION = {
   MAX_DURATION_MS:     30 * 60 * 1000,  // 30 minutos máximo por sesión
   SILENCE_TIMEOUT_MS:  10 * 1000,        // 10 segundos sin hablar → pregunta si sigue ahí
-  MAX_HISTORY:         20,               // Máximo de turnos a recordar en la conversación
+  MAX_HISTORY:         10,               // Máximo de turnos a recordar en la conversación
 };
 
 // Pipeline de voz

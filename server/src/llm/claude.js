@@ -286,7 +286,7 @@ async function streamOneTurn({ log, messages, language, userName, onTextChunk })
     model: env.CLAUDE_MODEL,
     max_tokens: 350,
     temperature: 0.1,
-    system: [{ type: 'text', text: buildSystemPrompt({ language, userName }), cache_control: { type: 'ephemeral' } }],
+    system: buildSystemPrompt({ language, userName }),
     messages,
     tools: TOOLS,
     tool_choice: { type: 'auto' },
