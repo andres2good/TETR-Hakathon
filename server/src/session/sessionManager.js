@@ -19,21 +19,21 @@ const activeSessions = new Map();
 
 // Tiempo de espera tras ejecutar una acción para que la pantalla se actualice
 const ACTION_SETTLE_MS = {
-  open_app:           4500,  // pages need time to load + time for extension to send new UI tree
-  navigate_to:        3500,
+  open_app:           6000,  // pages need time to load + time for extension to send new UI tree
+  navigate_to:        5000,
   close_tab:           500,
   switch_tab:          800,
-  new_tab:            1500,
+  new_tab:            2000,
   click:               900,
   set_text:            700,
   scroll_up:           350,
   scroll_down:         350,
-  press_back:         1200,
+  press_back:         1500,
   press_home:          600,
   press_enter:         800,
   press_key:           500,
   clear_field:         200,
-  request_screenshot: 1800,  // extension needs time to capture + send
+  request_screenshot: 2500,  // extension: 500ms paint delay + capture + WS round-trip
   default:             700,
 };
 
@@ -73,8 +73,8 @@ export async function createSession({ ws, deviceId, language = 'en' }) {
   activeSessions.set(sessionId, session);
 
   const greeting = language === 'es'
-    ? `Hola${user?.name ? ', ' + user.name : ''}. Soy NAVI, tu asistente. ¿En qué te ayudo?`
-    : `Hi${user?.name ? ', ' + user.name : ''}! I'm NAVI, what do you want to do today?`;
+    ? `Hola${user?.name ? ', ' + user.name : ''}. Soy Echo, tu asistente. ¿En qué te ayudo?`
+    : `Hi${user?.name ? ', ' + user.name : ''}! I'm Echo, what do you want to do today?`;
 
   await speakToUser(sessionId, greeting);
 
@@ -123,11 +123,20 @@ async function handleUserSpeech(sessionId, text) {
   log.info('[Session] Usuario dijo', { text, gen: myGen });
 
   sendToDevice(sessionId, WS_MESSAGES.TRANSCRIPT, { text });
+  // Fix consecutive user messages — can happen when a previous turn errored out
+  // before pushing the assistant reply. Anthropic rejects consecutive same-role messages.
+  if (session.messages.length > 0 && session.messages[session.messages.length - 1].role === 'user') {
+    session.messages.push({ role: 'assistant', content: '...' });
+  }
+
   session.messages.push({ role: 'user', content: text });
 
-  // Mantener historial acotado
+  // Mantener historial acotado — slice keeping pairs, then ensure starts with 'user'
   if (session.messages.length > SESSION.MAX_HISTORY * 2) {
     session.messages = session.messages.slice(-SESSION.MAX_HISTORY * 2);
+    while (session.messages.length > 0 && session.messages[0].role !== 'user') {
+      session.messages.shift();
+    }
   }
 
   try {
@@ -228,10 +237,12 @@ async function handleUserSpeech(sessionId, text) {
     session.lastScreenshot = null;
 
   } catch (error) {
-    log.error('[Session] Error procesando', { error: error.message });
+    log.error('[Session] Error procesando', { error: error.message, stack: error.stack });
     const fallback = session.language === 'es'
       ? 'Tuve un problema. ¿Puedes repetir?'
       : 'I had an issue. Can you repeat that?';
+    // Push the fallback as assistant reply so history stays valid (user always followed by assistant)
+    session.messages.push({ role: 'assistant', content: fallback });
     await speakToUser(sessionId, fallback);
   } finally {
     if (session.generationId === myGen) session.isProcessing = false;

@@ -156,8 +156,25 @@ export async function generateResponse({
 }) {
   const log = sessionLogger(sessionId);
 
-  const workingMessages = messages.map((m, i) => {
-    if (i === messages.length - 1 && m.role === 'user' && (uiTree || screenshot)) {
+  // Sanitize: Anthropic requires strictly alternating user/assistant messages,
+  // starting with user. Merge or drop any consecutive same-role messages.
+  const sanitized = [];
+  for (const m of messages) {
+    if (sanitized.length > 0 && sanitized[sanitized.length - 1].role === m.role) {
+      // Merge into previous message — keeps content readable
+      const prev = sanitized[sanitized.length - 1];
+      const prevText = typeof prev.content === 'string' ? prev.content : JSON.stringify(prev.content);
+      const curText  = typeof m.content  === 'string' ? m.content  : JSON.stringify(m.content);
+      prev.content = `${prevText}\n${curText}`;
+    } else {
+      sanitized.push({ ...m });
+    }
+  }
+  // Must start with user
+  while (sanitized.length > 0 && sanitized[0].role !== 'user') sanitized.shift();
+
+  const workingMessages = sanitized.map((m, i) => {
+    if (i === sanitized.length - 1 && m.role === 'user' && (uiTree || screenshot)) {
       const copy = { ...m };
       attachScreenContext(copy, uiTree, screenshot);
       return copy;
@@ -165,7 +182,7 @@ export async function generateResponse({
     return m;
   });
 
-  log.debug('[Claude] Generating response', { messageCount: messages.length, hasScreenshot: !!screenshot });
+  log.debug('[Claude] Generating response', { messageCount: sanitized.length, hasScreenshot: !!screenshot });
 
   return await withRetry(async () => {
     let finalText = '';

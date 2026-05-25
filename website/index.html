@@ -1,0 +1,778 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Echo by Ecolocation — AI Voice Assistant for Chrome</title>
+  <link rel="icon" type="image/jpeg" href="logo.jpeg">
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,500;0,600;1,300;1,400&family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet" />
+  <script type="module" src="https://unpkg.com/@splinetool/viewer@1.9.82/build/spline-viewer.js"></script>
+  <style>
+    *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+
+    :root {
+      --bg:      #03060c;
+      --bg2:     #060a12;
+      --bg3:     #090d18;
+      --card:    rgba(255,255,255,0.03);
+      --border:  rgba(255,255,255,0.07);
+      --eco:     #00c896;
+      --eco2:    #009e78;
+      --silver:  #a0aec0;
+      --silver2: #cbd5e0;
+      --shine:   #edf2f7;
+      --text:    #f0f4f8;
+      --muted:   #3a4a5c;
+      --sub:     #637080;
+    }
+
+    html { scroll-behavior: smooth; }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'Inter', system-ui, sans-serif;
+      line-height: 1.6;
+      overflow-x: hidden;
+    }
+
+    /* ── GRAIN TEXTURE ──────────────────────────────────────── */
+    body::after {
+      content: '';
+      position: fixed; inset: 0; z-index: 9999;
+      pointer-events: none;
+      opacity: 0.03;
+      background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 512 512' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.75' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+      background-size: 256px;
+    }
+
+    /* ── SCROLL FADE-IN ─────────────────────────────────────── */
+    .reveal {
+      opacity: 0;
+      transform: translateY(28px);
+      transition: opacity 0.7s cubic-bezier(.22,1,.36,1), transform 0.7s cubic-bezier(.22,1,.36,1);
+    }
+    .reveal.visible { opacity: 1; transform: translateY(0); }
+    .reveal-delay-1 { transition-delay: 0.1s; }
+    .reveal-delay-2 { transition-delay: 0.2s; }
+    .reveal-delay-3 { transition-delay: 0.3s; }
+
+    /* ── NAV ────────────────────────────────────────────────── */
+    nav {
+      position: sticky; top: 0; z-index: 100;
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 16px 60px;
+      background: rgba(3,6,12,0.75);
+      backdrop-filter: blur(28px) saturate(1.4);
+      border-bottom: 1px solid rgba(255,255,255,0.055);
+    }
+    .nav-brand { display: flex; align-items: center; gap: 12px; }
+    .nav-logo { height: 38px; width: 38px; border-radius: 50%; object-fit: cover; flex-shrink: 0; }
+    .nav-brand-text { display: flex; flex-direction: column; line-height: 1.15; }
+    .nav-name {
+      font-family: 'Cormorant Garamond', Georgia, serif;
+      font-size: 22px; font-weight: 500; letter-spacing: 3px;
+      background: linear-gradient(135deg, var(--shine) 0%, var(--silver) 100%);
+      -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+    }
+    .nav-company {
+      font-size: 9px; letter-spacing: 2.5px; text-transform: uppercase;
+      color: var(--sub); font-weight: 500;
+    }
+    .nav-links { display: flex; gap: 36px; align-items: center; }
+    .nav-links a {
+      color: var(--sub); text-decoration: none; font-size: 14px;
+      font-weight: 500; transition: color 0.2s; letter-spacing: 0.1px;
+    }
+    .nav-links a:hover { color: var(--text); }
+    .btn-nav {
+      background: rgba(0,200,150,0.12);
+      border: 1px solid rgba(0,200,150,0.3);
+      color: var(--eco) !important;
+      padding: 8px 20px; border-radius: 99px; font-size: 13px !important;
+      font-weight: 600 !important; letter-spacing: 0.3px;
+      transition: background 0.2s, box-shadow 0.2s !important;
+    }
+    .btn-nav:hover {
+      background: rgba(0,200,150,0.2) !important;
+      box-shadow: 0 0 20px rgba(0,200,150,0.2) !important;
+      color: var(--eco) !important;
+    }
+
+    /* ── HERO ───────────────────────────────────────────────── */
+    .hero {
+      position: relative;
+      min-height: 92vh;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      align-items: center;
+      gap: 0;
+      padding: 0 60px;
+      overflow: hidden;
+    }
+    .hero-bg-glow {
+      position: absolute; top: -200px; left: -100px;
+      width: 800px; height: 700px;
+      background: radial-gradient(ellipse, rgba(160,174,192,0.05) 0%, transparent 65%);
+      pointer-events: none;
+    }
+    .hero-bg-glow2 {
+      position: absolute; bottom: -150px; right: -50px;
+      width: 500px; height: 500px;
+      background: radial-gradient(ellipse, rgba(0,200,150,0.05) 0%, transparent 65%);
+      pointer-events: none;
+    }
+
+    .hero-content { position: relative; z-index: 2; padding-right: 40px; }
+
+    .hero-badge {
+      display: inline-flex; align-items: center; gap: 8px;
+      background: rgba(160,174,192,0.07);
+      border: 1px solid rgba(160,174,192,0.18);
+      color: var(--silver2);
+      font-size: 10px; letter-spacing: 2.5px; text-transform: uppercase;
+      font-weight: 600;
+      padding: 7px 16px; border-radius: 99px;
+      margin-bottom: 28px;
+    }
+    .badge-dot { width: 5px; height: 5px; border-radius: 50%; background: var(--eco); flex-shrink: 0; }
+
+    .hero h1 {
+      font-family: 'Cormorant Garamond', Georgia, serif;
+      font-size: clamp(52px, 6vw, 84px);
+      font-weight: 300; letter-spacing: 1px; line-height: 1.08;
+      margin-bottom: 22px;
+      color: var(--text);
+    }
+    .hero h1 .chrome {
+      background: linear-gradient(135deg, var(--shine) 0%, var(--silver2) 40%, var(--silver) 100%);
+      -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+    }
+    .hero h1 .green {
+      background: linear-gradient(135deg, #00e6ac 0%, var(--eco) 100%);
+      -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+    }
+
+    .hero-sub {
+      font-size: 17px; color: var(--sub); max-width: 460px;
+      margin-bottom: 40px; line-height: 1.75; font-weight: 400;
+    }
+
+    .hero-actions { display: flex; gap: 12px; flex-wrap: wrap; }
+    .btn-primary {
+      padding: 14px 32px; border-radius: 99px; font-size: 15px;
+      font-weight: 700; cursor: pointer; border: none; text-decoration: none;
+      display: inline-flex; align-items: center; gap: 8px; font-family: 'Inter', sans-serif;
+      background: linear-gradient(135deg, #00e6ac, var(--eco));
+      color: #021a12;
+      box-shadow: 0 0 40px rgba(0,200,150,0.3);
+      transition: transform 0.2s, box-shadow 0.2s;
+      letter-spacing: 0.1px;
+    }
+    .btn-primary:hover { transform: translateY(-2px); box-shadow: 0 0 60px rgba(0,200,150,0.4); }
+    .btn-primary:active { transform: scale(0.97); }
+
+    .btn-secondary {
+      padding: 14px 28px; border-radius: 99px; font-size: 15px;
+      font-weight: 600; cursor: pointer; text-decoration: none;
+      display: inline-flex; align-items: center; gap: 8px; font-family: 'Inter', sans-serif;
+      background: rgba(255,255,255,0.04);
+      border: 1px solid rgba(255,255,255,0.1);
+      color: var(--silver2);
+      transition: background 0.2s, border-color 0.2s, transform 0.2s;
+    }
+    .btn-secondary:hover { background: rgba(255,255,255,0.08); border-color: rgba(255,255,255,0.18); transform: translateY(-2px); }
+
+    /* ── SPLINE ROBOT ───────────────────────────────────────── */
+    .hero-robot {
+      position: relative; z-index: 2;
+      height: 620px;
+      display: flex; align-items: center; justify-content: center;
+      border-radius: 28px;
+      overflow: hidden;
+      /* Glow behind the robot so empty state never looks like a dead black box */
+      background: radial-gradient(ellipse at 50% 55%,
+        rgba(0,200,150,0.07) 0%,
+        rgba(160,174,192,0.04) 40%,
+        transparent 70%);
+    }
+    spline-viewer {
+      width: 100%; height: 100%;
+      --spline-viewer-bg: transparent;
+    }
+    /* Pierce the shadow DOM to remove Spline's own background */
+    spline-viewer::part(canvas) { background: transparent !important; }
+    .robot-fallback {
+      position: absolute; inset: 0;
+      display: flex; flex-direction: column;
+      align-items: center; justify-content: center; gap: 12px;
+      color: var(--sub); font-size: 13px; letter-spacing: 1px;
+      pointer-events: none;
+    }
+    .robot-fallback.hidden { display: none; }
+    .spin-ring {
+      width: 34px; height: 34px;
+      border: 2px solid rgba(160,174,192,0.15);
+      border-top-color: var(--eco);
+      border-radius: 50%;
+      animation: spin 0.9s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* ── DIVIDER ────────────────────────────────────────────── */
+    .divider {
+      height: 1px;
+      background: linear-gradient(90deg, transparent, rgba(160,174,192,0.12), transparent);
+    }
+
+    /* ── SECTIONS ───────────────────────────────────────────── */
+    .section { padding: 100px 24px; max-width: 1080px; margin: 0 auto; }
+
+    .section-label {
+      text-align: center;
+      font-size: 10px; letter-spacing: 4px; text-transform: uppercase;
+      color: var(--eco); font-weight: 700; margin-bottom: 12px;
+    }
+    .section-title {
+      font-family: 'Cormorant Garamond', Georgia, serif;
+      text-align: center;
+      font-size: clamp(36px, 5vw, 58px);
+      font-weight: 300; margin-bottom: 60px;
+      letter-spacing: 2px;
+      color: var(--text);
+    }
+
+    /* ── STEPS ──────────────────────────────────────────────── */
+    .steps { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 20px; }
+    .step {
+      background: rgba(255,255,255,0.02);
+      border: 1px solid rgba(255,255,255,0.07);
+      border-radius: 22px; padding: 34px 28px; text-align: center;
+      transition: border-color 0.3s, transform 0.3s, box-shadow 0.3s;
+      position: relative; overflow: hidden;
+    }
+    .step::after {
+      content: '';
+      position: absolute; top: 0; left: 0; right: 0; height: 1px;
+      background: linear-gradient(90deg, transparent, rgba(160,174,192,0.25), transparent);
+    }
+    .step:hover {
+      border-color: rgba(160,174,192,0.18);
+      transform: translateY(-4px);
+      box-shadow: 0 24px 48px rgba(0,0,0,0.4);
+    }
+    .step-num {
+      width: 46px; height: 46px;
+      background: rgba(160,174,192,0.07);
+      border: 1px solid rgba(160,174,192,0.2);
+      border-radius: 14px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 18px; font-weight: 800;
+      color: var(--silver2);
+      margin: 0 auto 22px;
+    }
+    .step h3 { font-size: 17px; font-weight: 700; margin-bottom: 10px; color: var(--text); letter-spacing: -0.2px; }
+    .step p  { font-size: 13.5px; color: var(--sub); line-height: 1.65; }
+
+    /* ── USE CASES ──────────────────────────────────────────── */
+    .uses-bg { background: var(--bg2); }
+    .uses-grid {
+      display: grid; grid-template-columns: repeat(auto-fit, minmax(175px, 1fr));
+      gap: 14px;
+    }
+    .use-card {
+      background: rgba(255,255,255,0.02);
+      border: 1px solid rgba(255,255,255,0.06);
+      border-radius: 18px; padding: 26px 18px; text-align: center;
+      transition: border-color 0.3s, transform 0.3s, background 0.3s, box-shadow 0.3s;
+    }
+    .use-card:hover {
+      border-color: rgba(160,174,192,0.2);
+      background: rgba(160,174,192,0.035);
+      transform: translateY(-4px);
+      box-shadow: 0 16px 40px rgba(0,0,0,0.35);
+    }
+    .use-icon { font-size: 32px; margin-bottom: 12px; line-height: 1; display: block; }
+    .use-title { font-size: 13px; font-weight: 700; margin-bottom: 6px; color: var(--text); }
+    .use-desc  { font-size: 11.5px; color: var(--sub); line-height: 1.55; }
+
+    /* ── PRICING ────────────────────────────────────────────── */
+    .pricing-bg { background: var(--bg3); }
+    .pricing-wrap { max-width: 1060px; margin: 0 auto; padding: 100px 24px; }
+
+    .billing-toggle {
+      display: flex; align-items: center; justify-content: center;
+      gap: 14px; margin-bottom: 56px;
+    }
+    .billing-label {
+      font-size: 14px; font-weight: 600; color: var(--muted);
+      cursor: pointer; transition: color 0.2s; user-select: none; letter-spacing: 0.1px;
+    }
+    .billing-label.active { color: var(--text); }
+    .toggle-pill {
+      width: 50px; height: 28px;
+      background: rgba(255,255,255,0.07);
+      border-radius: 99px; position: relative; cursor: pointer;
+      transition: background 0.3s;
+      border: 1px solid rgba(255,255,255,0.1);
+    }
+    .toggle-pill.annual { background: rgba(0,200,150,0.18); border-color: rgba(0,200,150,0.35); }
+    .toggle-knob {
+      position: absolute; top: 4px; left: 4px;
+      width: 18px; height: 18px;
+      background: var(--silver2); border-radius: 50%;
+      transition: transform 0.3s;
+      box-shadow: 0 2px 6px rgba(0,0,0,0.4);
+    }
+    .toggle-pill.annual .toggle-knob { transform: translateX(22px); background: var(--eco); }
+    .save-badge {
+      font-size: 11px; font-weight: 700;
+      background: rgba(0,200,150,0.1); color: var(--eco);
+      border: 1px solid rgba(0,200,150,0.22);
+      border-radius: 99px; padding: 4px 12px; letter-spacing: 0.3px;
+    }
+
+    .plans-grid {
+      display: grid; grid-template-columns: repeat(auto-fit, minmax(290px, 1fr));
+      gap: 20px; align-items: start;
+    }
+
+    .plan-card {
+      background: rgba(255,255,255,0.022);
+      border: 1px solid rgba(255,255,255,0.075);
+      border-radius: 26px; padding: 34px;
+      position: relative; transition: transform 0.3s, border-color 0.3s, box-shadow 0.3s;
+      overflow: hidden;
+    }
+    .plan-card::after {
+      content: '';
+      position: absolute; top: 0; left: 0; right: 0; height: 1px;
+      background: linear-gradient(90deg, transparent, rgba(160,174,192,0.18), transparent);
+    }
+    .plan-card:hover {
+      transform: translateY(-5px);
+      border-color: rgba(160,174,192,0.16);
+      box-shadow: 0 24px 64px rgba(0,0,0,0.5);
+    }
+    .plan-card.popular {
+      border-color: rgba(160,174,192,0.22);
+      background: rgba(160,174,192,0.035);
+      box-shadow: 0 0 50px rgba(160,174,192,0.05);
+    }
+    .plan-card.popular::after {
+      background: linear-gradient(90deg, transparent, rgba(160,174,192,0.5), transparent);
+    }
+    .plan-card.popular:hover { box-shadow: 0 24px 64px rgba(0,0,0,0.55), 0 0 50px rgba(160,174,192,0.08); }
+
+    .popular-badge {
+      position: absolute; top: -1px; left: 50%;
+      transform: translateX(-50%);
+      background: linear-gradient(90deg, var(--silver) 0%, var(--shine) 50%, var(--silver) 100%);
+      color: #080d18; font-size: 10px; font-weight: 800;
+      letter-spacing: 2px; text-transform: uppercase;
+      padding: 5px 20px; border-radius: 0 0 14px 14px;
+      white-space: nowrap;
+    }
+
+    .plan-name {
+      font-family: 'Cormorant Garamond', Georgia, serif;
+      font-size: 28px; font-weight: 400; margin-bottom: 4px;
+      color: var(--text); letter-spacing: 1.5px;
+    }
+    .plan-tagline { font-size: 12px; color: var(--sub); margin-bottom: 26px; font-weight: 500; }
+    .plan-price-row { display: flex; align-items: baseline; gap: 5px; margin-bottom: 4px; }
+    .plan-amount {
+      font-family: 'Cormorant Garamond', Georgia, serif;
+      font-size: 54px; font-weight: 300; line-height: 1;
+      letter-spacing: -1px;
+      background: linear-gradient(135deg, var(--shine) 0%, var(--silver2) 100%);
+      -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+    }
+    .plan-period { font-size: 15px; color: var(--sub); font-weight: 500; }
+    .plan-annual-note { font-size: 12px; color: var(--eco); margin-bottom: 30px; min-height: 18px; font-weight: 500; }
+
+    .plan-features { list-style: none; margin-bottom: 34px; }
+    .plan-features li {
+      font-size: 13.5px; color: var(--sub);
+      padding: 9px 0;
+      border-bottom: 1px solid rgba(255,255,255,0.045);
+      display: flex; align-items: center; gap: 10px;
+    }
+    .plan-features li:last-child { border-bottom: none; }
+    .check {
+      width: 18px; height: 18px; flex-shrink: 0;
+      background: rgba(0,200,150,0.1);
+      border: 1px solid rgba(0,200,150,0.2);
+      border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 9px; color: var(--eco); font-weight: 800;
+    }
+
+    .btn-subscribe {
+      width: 100%; padding: 15px;
+      border: none; border-radius: 14px;
+      background: linear-gradient(135deg, #003087, #005ea6);
+      color: #fff; font-size: 14px; font-weight: 700;
+      cursor: pointer; display: flex; align-items: center;
+      justify-content: center; gap: 8px;
+      transition: transform 0.2s, box-shadow 0.2s;
+      font-family: 'Inter', sans-serif; letter-spacing: 0.2px;
+    }
+    .btn-subscribe:hover { transform: translateY(-2px); box-shadow: 0 10px 28px rgba(0,80,180,0.4); }
+    .btn-subscribe:active { transform: scale(0.98); }
+
+    .trust-strip {
+      text-align: center; margin-top: 28px;
+      font-size: 12.5px; color: var(--muted); letter-spacing: 0.2px;
+      line-height: 1.8;
+    }
+    .trust-strip strong { color: var(--eco); font-weight: 600; }
+
+    /* ── FOOTER ─────────────────────────────────────────────── */
+    footer {
+      border-top: 1px solid rgba(255,255,255,0.05);
+      padding: 52px 60px;
+      display: flex; justify-content: space-between; align-items: center;
+      flex-wrap: wrap; gap: 20px;
+    }
+    .footer-brand { display: flex; flex-direction: row; align-items: center; gap: 14px; }
+    .footer-brand-text { display: flex; flex-direction: column; gap: 4px; }
+    .footer-logo { height: 44px; width: 44px; border-radius: 50%; object-fit: cover; flex-shrink: 0; }
+    .footer-name {
+      font-family: 'Cormorant Garamond', Georgia, serif;
+      font-size: 22px; font-weight: 400; letter-spacing: 3px;
+      background: linear-gradient(135deg, var(--shine), var(--silver));
+      -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+    }
+    .footer-copy { font-size: 11.5px; color: var(--muted); }
+    .footer-copy strong { color: var(--eco); font-weight: 600; }
+    .footer-links { display: flex; gap: 28px; }
+    .footer-links a {
+      font-size: 13px; color: var(--sub); text-decoration: none;
+      font-weight: 500; transition: color 0.2s;
+    }
+    .footer-links a:hover { color: var(--silver2); }
+
+    /* ── RESPONSIVE ─────────────────────────────────────────── */
+    @media (max-width: 900px) {
+      .hero { grid-template-columns: 1fr; min-height: auto; padding: 80px 24px 40px; text-align: center; }
+      .hero-content { padding-right: 0; }
+      .hero-badge { justify-content: center; }
+      .hero-sub { margin-left: auto; margin-right: auto; }
+      .hero-actions { justify-content: center; }
+      .hero-robot { height: 400px; }
+    }
+    @media (max-width: 768px) {
+      nav { padding: 16px 24px; }
+      .nav-links a:not(.btn-nav) { display: none; }
+      footer { padding: 36px 24px; flex-direction: column; align-items: flex-start; }
+    }
+    @media (max-width: 480px) {
+      .plans-grid { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- ── NAV ───────────────────────────────────────────────── -->
+  <nav>
+    <div class="nav-brand">
+      <img src="logo.jpeg" alt="Ecolocation" class="nav-logo">
+      <div class="nav-brand-text">
+        <span class="nav-name">Echo</span>
+        <span class="nav-company">by Ecolocation</span>
+      </div>
+    </div>
+    <div class="nav-links">
+      <a href="#how">How it works</a>
+      <a href="#uses">Features</a>
+      <a href="#pricing">Pricing</a>
+      <a href="#pricing" class="btn-nav">Get Echo ↗</a>
+    </div>
+  </nav>
+
+  <!-- ── HERO ──────────────────────────────────────────────── -->
+  <section class="hero">
+    <div class="hero-bg-glow"></div>
+    <div class="hero-bg-glow2"></div>
+
+    <!-- Left: text -->
+    <div class="hero-content">
+      <div class="hero-badge reveal">
+        <span class="badge-dot"></span>
+        Chrome Extension · AI Voice Assistant
+      </div>
+      <h1 class="reveal reveal-delay-1">
+        Your browser.<br>
+        <span class="chrome">Controlled</span><br>
+        by <span class="green">voice.</span>
+      </h1>
+      <p class="hero-sub reveal reveal-delay-2">
+        Echo listens, understands, and controls Chrome for you.
+        Send emails, play music, browse any site — completely hands-free.
+      </p>
+      <div class="hero-actions reveal reveal-delay-3">
+        <a href="#pricing" class="btn-primary">Get Echo →</a>
+        <a href="#how" class="btn-secondary">See how it works</a>
+      </div>
+    </div>
+
+    <!-- Right: Spline 3D Robot -->
+    <div class="hero-robot reveal reveal-delay-2">
+      <div class="robot-fallback" id="robot-fallback">
+        <div class="spin-ring"></div>
+        <span>Loading robot…</span>
+      </div>
+      <spline-viewer
+        id="spline-robot"
+        url="https://prod.spline.design/kZDDjO5HuC9GJUM2/scene.splinecode"
+      ></spline-viewer>
+    </div>
+  </section>
+
+  <div class="divider"></div>
+
+  <!-- ── HOW IT WORKS ──────────────────────────────────────── -->
+  <section id="how">
+    <div class="section">
+      <div class="section-label reveal">How it works</div>
+      <h2 class="section-title reveal reveal-delay-1">Three steps. Zero hands.</h2>
+      <div class="steps">
+        <div class="step reveal">
+          <div class="step-num">1</div>
+          <h3>Say "Echo"</h3>
+          <p>The wake word activates the assistant — no button, no click. Just your voice.</p>
+        </div>
+        <div class="step reveal reveal-delay-1">
+          <div class="step-num">2</div>
+          <h3>Give a command</h3>
+          <p>"Send an email to dad saying good morning" — Echo understands natural language.</p>
+        </div>
+        <div class="step reveal reveal-delay-2">
+          <div class="step-num">3</div>
+          <h3>It happens</h3>
+          <p>Echo navigates, clicks, types, and responds — all while you sit back and listen.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <div class="divider"></div>
+
+  <!-- ── USE CASES ─────────────────────────────────────────── -->
+  <section id="uses" class="uses-bg">
+    <div class="section">
+      <div class="section-label reveal">What Echo can do</div>
+      <h2 class="section-title reveal reveal-delay-1">Built for real life</h2>
+      <div class="uses-grid">
+        <div class="use-card reveal">
+          <span class="use-icon">📧</span>
+          <div class="use-title">Send Emails</div>
+          <div class="use-desc">Compose and send Gmail messages entirely by voice</div>
+        </div>
+        <div class="use-card reveal reveal-delay-1">
+          <span class="use-icon">💬</span>
+          <div class="use-title">WhatsApp</div>
+          <div class="use-desc">Message any contact on WhatsApp Web hands-free</div>
+        </div>
+        <div class="use-card reveal reveal-delay-2">
+          <span class="use-icon">▶️</span>
+          <div class="use-title">Play Music</div>
+          <div class="use-desc">Control YouTube, YouTube Music, and Spotify by voice</div>
+        </div>
+        <div class="use-card reveal">
+          <span class="use-icon">🔍</span>
+          <div class="use-title">Search Anything</div>
+          <div class="use-desc">Google Search, Maps, Wikipedia — just ask</div>
+        </div>
+        <div class="use-card reveal reveal-delay-1">
+          <span class="use-icon">🖱️</span>
+          <div class="use-title">Click Anything</div>
+          <div class="use-desc">Echo clicks buttons, links, and menus on any website</div>
+        </div>
+        <div class="use-card reveal reveal-delay-2">
+          <span class="use-icon">📺</span>
+          <div class="use-title">Browse & Watch</div>
+          <div class="use-desc">Open Netflix, Reddit, Twitter, Instagram by voice</div>
+        </div>
+        <div class="use-card reveal">
+          <span class="use-icon">🗺️</span>
+          <div class="use-title">Get Directions</div>
+          <div class="use-desc">Open Google Maps and navigate to any location</div>
+        </div>
+        <div class="use-card reveal reveal-delay-1">
+          <span class="use-icon">♿</span>
+          <div class="use-title">Accessibility</div>
+          <div class="use-desc">Designed for blind and low-vision users — use Chrome all day</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <div class="divider"></div>
+
+  <!-- ── PRICING ────────────────────────────────────────────── -->
+  <section id="pricing" class="pricing-bg">
+    <div class="pricing-wrap">
+      <div class="section-label reveal">Pricing</div>
+      <h2 class="section-title reveal reveal-delay-1">Choose your plan</h2>
+
+      <div class="billing-toggle reveal reveal-delay-2">
+        <span class="billing-label active" id="lbl-monthly">Monthly</span>
+        <div class="toggle-pill" id="billing-pill">
+          <div class="toggle-knob"></div>
+        </div>
+        <span class="billing-label" id="lbl-annual">Annual</span>
+        <span class="save-badge">Save 25%</span>
+      </div>
+
+      <div class="plans-grid">
+
+        <!-- Standard -->
+        <div class="plan-card reveal">
+          <div class="plan-name">Standard</div>
+          <div class="plan-tagline">Great for everyday use</div>
+          <div class="plan-price-row">
+            <span class="plan-amount" id="price-standard">$19.99</span>
+            <span class="plan-period">/mo</span>
+          </div>
+          <div class="plan-annual-note" id="note-standard"></div>
+          <ul class="plan-features">
+            <li><span class="check">✓</span>Full voice browser control</li>
+            <li><span class="check">✓</span>Send emails in Gmail by voice</li>
+            <li><span class="check">✓</span>YouTube &amp; YouTube Music</li>
+            <li><span class="check">✓</span>WhatsApp messaging by voice</li>
+            <li><span class="check">✓</span>Google Search &amp; Maps</li>
+            <li><span class="check">✓</span>English &amp; Spanish support</li>
+            <li><span class="check">✓</span>Wake word activation ("Echo")</li>
+          </ul>
+          <button class="btn-subscribe" onclick="goToPayPal('standard')">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="#009cde"><path d="M7.076 21.337H2.47a.641.641 0 01-.633-.74L4.944.901C5.026.382 5.474 0 5.998 0h7.46c2.57 0 4.578.543 5.69 1.81 1.01 1.15 1.304 2.42 1.012 4.287-.023.143-.047.288-.077.437-.983 5.05-4.349 6.797-8.647 6.797h-2.19c-.524 0-.968.382-1.05.9l-1.12 7.106zm14.146-14.42a3.35 3.35 0 00-.607-.541c-.013.076-.026.175-.041.254-.93 4.778-4.005 7.201-9.138 7.201h-2.19a.563.563 0 00-.556.479l-1.187 7.527h-.99l-.316 2.005c-.055.346.214.657.567.657h3.957a.641.641 0 00.633-.547l.026-.139.503-3.19.032-.174a.641.641 0 01.633-.547h.399c2.587 0 4.614-.537 5.707-2.117.82-1.19 1.12-2.652.968-4.868z"/></svg>
+            Subscribe with PayPal
+          </button>
+        </div>
+
+        <!-- Pro -->
+        <div class="plan-card popular reveal reveal-delay-1">
+          <div class="popular-badge">Most Popular</div>
+          <div class="plan-name">Pro</div>
+          <div class="plan-tagline">For power users</div>
+          <div class="plan-price-row">
+            <span class="plan-amount" id="price-pro">$45.00</span>
+            <span class="plan-period">/mo</span>
+          </div>
+          <div class="plan-annual-note" id="note-pro"></div>
+          <ul class="plan-features">
+            <li><span class="check">✓</span>Everything in Standard</li>
+            <li><span class="check">✓</span>Spotify, Netflix, Instagram &amp; more</li>
+            <li><span class="check">✓</span>Multi-tab voice control</li>
+            <li><span class="check">✓</span>Scroll, click, type on any site</li>
+            <li><span class="check">✓</span>Custom AI name</li>
+            <li><span class="check">✓</span>Faster AI response speed</li>
+            <li><span class="check">✓</span>Priority processing</li>
+          </ul>
+          <button class="btn-subscribe" onclick="goToPayPal('pro')">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="#009cde"><path d="M7.076 21.337H2.47a.641.641 0 01-.633-.74L4.944.901C5.026.382 5.474 0 5.998 0h7.46c2.57 0 4.578.543 5.69 1.81 1.01 1.15 1.304 2.42 1.012 4.287-.023.143-.047.288-.077.437-.983 5.05-4.349 6.797-8.647 6.797h-2.19c-.524 0-.968.382-1.05.9l-1.12 7.106zm14.146-14.42a3.35 3.35 0 00-.607-.541c-.013.076-.026.175-.041.254-.93 4.778-4.005 7.201-9.138 7.201h-2.19a.563.563 0 00-.556.479l-1.187 7.527h-.99l-.316 2.005c-.055.346.214.657.567.657h3.957a.641.641 0 00.633-.547l.026-.139.503-3.19.032-.174a.641.641 0 01.633-.547h.399c2.587 0 4.614-.537 5.707-2.117.82-1.19 1.12-2.652.968-4.868z"/></svg>
+            Subscribe with PayPal
+          </button>
+        </div>
+
+        <!-- Elite -->
+        <div class="plan-card reveal reveal-delay-2">
+          <div class="plan-name">Elite</div>
+          <div class="plan-tagline">Unlimited · Always-on</div>
+          <div class="plan-price-row">
+            <span class="plan-amount" id="price-elite">$99.99</span>
+            <span class="plan-period">/mo</span>
+          </div>
+          <div class="plan-annual-note" id="note-elite"></div>
+          <ul class="plan-features">
+            <li><span class="check">✓</span>Everything in Pro</li>
+            <li><span class="check">✓</span>Unlimited daily use — no limits</li>
+            <li><span class="check">✓</span>Designed for blind &amp; low-vision users</li>
+            <li><span class="check">✓</span>Use Echo all day, every day</li>
+            <li><span class="check">✓</span>Early access to new features</li>
+            <li><span class="check">✓</span>Priority support</li>
+          </ul>
+          <button class="btn-subscribe" onclick="goToPayPal('elite')">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="#009cde"><path d="M7.076 21.337H2.47a.641.641 0 01-.633-.74L4.944.901C5.026.382 5.474 0 5.998 0h7.46c2.57 0 4.578.543 5.69 1.81 1.01 1.15 1.304 2.42 1.012 4.287-.023.143-.047.288-.077.437-.983 5.05-4.349 6.797-8.647 6.797h-2.19c-.524 0-.968.382-1.05.9l-1.12 7.106zm14.146-14.42a3.35 3.35 0 00-.607-.541c-.013.076-.026.175-.041.254-.93 4.778-4.005 7.201-9.138 7.201h-2.19a.563.563 0 00-.556.479l-1.187 7.527h-.99l-.316 2.005c-.055.346.214.657.567.657h3.957a.641.641 0 00.633-.547l.026-.139.503-3.19.032-.174a.641.641 0 01.633-.547h.399c2.587 0 4.614-.537 5.707-2.117.82-1.19 1.12-2.652.968-4.868z"/></svg>
+            Subscribe with PayPal
+          </button>
+        </div>
+
+      </div>
+
+      <div class="trust-strip reveal">
+        After subscribing → open the Echo extension → sign in →
+        <strong>your access activates automatically.</strong>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── FOOTER ─────────────────────────────────────────────── -->
+  <footer>
+    <div class="footer-brand">
+      <img src="logo.jpeg" alt="Ecolocation" class="footer-logo">
+      <div class="footer-brand-text">
+        <span class="footer-name">Echo</span>
+        <span class="footer-copy">© 2025 <strong>Ecolocation</strong> · AI Voice Assistant for Chrome</span>
+      </div>
+    </div>
+    <div class="footer-links">
+      <a href="#pricing">Pricing</a>
+      <a href="#uses">Features</a>
+      <a href="mailto:eugeniozarzar@gmail.com?subject=Echo Support">Support</a>
+    </div>
+  </footer>
+
+  <script>
+    // ── Spline robot ────────────────────────────────────────
+    const splineEl   = document.getElementById('spline-robot');
+    const fallbackEl = document.getElementById('robot-fallback');
+    function hideLoader() { if (fallbackEl) fallbackEl.classList.add('hidden'); }
+    if (splineEl) {
+      splineEl.addEventListener('load', hideLoader);
+      // Safety fallback: hide spinner after 10s regardless
+      setTimeout(hideLoader, 10000);
+    }
+
+    // ── Scroll reveal ───────────────────────────────────────
+    const observer = new IntersectionObserver((entries) => {
+      entries.forEach(e => { if (e.isIntersecting) { e.target.classList.add('visible'); } });
+    }, { threshold: 0.12 });
+    document.querySelectorAll('.reveal').forEach(el => observer.observe(el));
+
+    // ── Billing toggle ──────────────────────────────────────
+    const PAYPAL_PLANS = {
+      standard: { monthly: 'P-9SP63596V4580793GNIJYRZQ', annual: 'P-6S570919U45715636NIJZGTA' },
+      pro:      { monthly: 'P-15C68961LV051815KNIJYZUI', annual: 'P-55248322X00338254NIJZQ6Y' },
+      elite:    { monthly: 'P-9RE91957W06478831NIJZE6Y', annual: 'P-1E692555ED5333034NIJZSVI' },
+    };
+    let billingCycle = 'monthly';
+
+    function goToPayPal(plan) {
+      window.open(`https://www.paypal.com/webapps/billing/plans/subscribe?plan_id=${PAYPAL_PLANS[plan][billingCycle]}`, '_blank');
+    }
+
+    function setBilling(cycle) {
+      billingCycle = cycle;
+      const annual = cycle === 'annual';
+      document.getElementById('billing-pill').classList.toggle('annual', annual);
+      document.getElementById('lbl-monthly').classList.toggle('active', !annual);
+      document.getElementById('lbl-annual').classList.toggle('active', annual);
+      document.getElementById('price-standard').textContent = annual ? '$15.00' : '$19.99';
+      document.getElementById('price-pro').textContent      = annual ? '$39.99' : '$45.00';
+      document.getElementById('price-elite').textContent    = annual ? '$79.99' : '$99.99';
+      document.getElementById('note-standard').textContent  = annual ? '$180 billed yearly' : '';
+      document.getElementById('note-pro').textContent       = annual ? '$480 billed yearly' : '';
+      document.getElementById('note-elite').textContent     = annual ? '$959.88 billed yearly' : '';
+    }
+
+    document.getElementById('lbl-monthly').addEventListener('click', () => setBilling('monthly'));
+    document.getElementById('lbl-annual').addEventListener('click', () => setBilling('annual'));
+    document.getElementById('billing-pill').addEventListener('click', () => setBilling(billingCycle === 'monthly' ? 'annual' : 'monthly'));
+  </script>
+</body>
+</html>

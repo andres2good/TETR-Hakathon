@@ -150,15 +150,19 @@ function getAllEditableFields() {
 
 function getButtons() {
   const btns = [];
-  const seen = new Set();
+  const seenEl   = new Set();
+  const seenText = new Set();
 
   document.querySelectorAll(
-    'button, [role="button"], input[type="submit"], input[type="button"], input[type="reset"], [role="switch"]'
+    'button, [role="button"], [role="switch"], [role="checkbox"], [role="radio"],' +
+    'input[type="submit"], input[type="button"], input[type="reset"],' +
+    '[aria-haspopup]:not(input):not([role="combobox"])'
   ).forEach(el => {
-    if (isHidden(el)) return;
+    if (seenEl.has(el) || isHidden(el)) return;
+    seenEl.add(el);
     const text = getElText(el);
-    if (!text || seen.has(text)) return;
-    seen.add(text);
+    if (!text || seenText.has(text)) return;
+    seenText.add(text);
     const state = getState(el);
     btns.push({ el, text: text.slice(0, 100), state });
   });
@@ -236,14 +240,14 @@ function getState(el) {
 
 function isHidden(el) {
   if (!el) return true;
-  // Walk up the DOM — any ancestor with display:none or visibility:hidden hides this element
+  // display:none does NOT inherit — must walk ancestors
   let node = el;
   while (node && node !== document.body) {
-    const style = window.getComputedStyle(node);
-    if (style.display === 'none' || style.visibility === 'hidden') return true;
+    if (window.getComputedStyle(node).display === 'none') return true;
     node = node.parentElement;
   }
-  return false;
+  // visibility inherits BUT can be overridden by children — check el itself only
+  return window.getComputedStyle(el).visibility === 'hidden';
 }
 
 function isInViewport(el) {
@@ -275,54 +279,110 @@ function executeAction(action, params) {
 function doClick(target) {
   if (!target) return 'no target specified';
 
-  // Reject coordinate inputs like "867, 224" or "x:400 y:300"
   if (/^\d+\s*[,x]\s*\d+$/i.test(target.trim())) {
-    return `ERROR: pixel coordinates are not supported. Use the exact text label from the UI tree instead.`;
+    return 'ERROR: pixel coordinates are not supported. Use the exact text label from the UI tree.';
   }
 
   const q = target.toLowerCase().trim();
 
-  // Build candidate pool — every interactive element type
+  // Every kind of interactive element Chrome can have
   const selectors = [
     'button', '[role="button"]',
     'input[type="submit"]', 'input[type="button"]', 'input[type="reset"]',
-    'a[href]',
+    'input[type="checkbox"]', 'input[type="radio"]',
+    'a[href]', 'a[onclick]',
     '[role="tab"]', '[role="menuitem"]', '[role="menuitemradio"]', '[role="menuitemcheckbox"]',
     '[role="option"]', '[role="treeitem"]', '[role="link"]', '[role="switch"]',
-    '[contenteditable="true"]', 'input', 'textarea', 'select',
+    '[role="checkbox"]', '[role="radio"]', '[role="listitem"]',
+    '[role="gridcell"]', '[role="row"]', '[role="cell"]', '[role="combobox"]',
+    '[aria-haspopup]',
     '[tabindex]:not([tabindex="-1"])',
+    '[onclick]',
+    'input', 'select', 'textarea',
   ];
-  const candidates = [...new Set(document.querySelectorAll(selectors.join(',')))];
+
+  const seen = new Set();
+  const candidates = [];
+  document.querySelectorAll(selectors.join(',')).forEach(el => {
+    if (!seen.has(el)) { seen.add(el); candidates.push(el); }
+  });
 
   let best = null, bestScore = 0;
   for (const el of candidates) {
     if (isHidden(el)) continue;
-    const text  = getElText(el).toLowerCase();
-    const label = getFieldLabel(el).toLowerCase();
-    const tip   = (el.getAttribute('data-tooltip') || el.getAttribute('data-title') || '').toLowerCase();
-    const score = Math.max(scoreMatch(text, q), scoreMatch(label, q), scoreMatch(tip, q));
+    const text = getElText(el).toLowerCase();
+    const lbl  = getFieldLabel(el).toLowerCase();
+    const tip  = (
+      el.getAttribute('data-tooltip') || el.getAttribute('data-title') ||
+      el.getAttribute('aria-description') || el.getAttribute('data-testid') || ''
+    ).toLowerCase();
+    const score = Math.max(scoreMatch(text, q), scoreMatch(lbl, q), scoreMatch(tip, q));
     if (score > bestScore) { best = el; bestScore = score; }
   }
 
-  if (best && bestScore > 0) {
-    best.scrollIntoView({ behavior: 'smooth', block: 'center' });
-    best.focus();
-    best.click();
-    const label = getElText(best) || getFieldLabel(best);
-    return `clicked "${label.slice(0, 60)}" (score ${bestScore})`;
-  }
+  if (best && bestScore > 0) return fireClick(best, bestScore);
 
-  // Text node walk as last resort
+  // Text-node walk — find any matching text, then climb to nearest clickable ancestor
   const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
   while (walker.nextNode()) {
     const node = walker.currentNode;
-    if (node.textContent.toLowerCase().includes(q) && !isHidden(node.parentElement)) {
-      node.parentElement.click();
-      return `clicked text node "${node.textContent.trim().slice(0, 60)}"`;
-    }
+    if (!node.textContent.toLowerCase().includes(q)) continue;
+    if (isHidden(node.parentElement)) continue;
+    const clickable = findClickableAncestor(node.parentElement) || node.parentElement;
+    return fireClick(clickable, 'text-walk');
   }
 
-  return `element not found: "${target}". Check UI tree for exact labels.`;
+  return `element not found: "${target}". Call request_screenshot, check the UI tree for the exact label.`;
+}
+
+// Walk up the DOM to find the nearest element that can be meaningfully clicked
+function findClickableAncestor(el) {
+  let node = el;
+  while (node && node !== document.body) {
+    const tag  = node.tagName?.toLowerCase() || '';
+    const role = node.getAttribute?.('role') || '';
+    if (['button','a','input','select','textarea'].includes(tag) ||
+        ['button','link','tab','menuitem','menuitemradio','menuitemcheckbox',
+         'option','switch','checkbox','radio','treeitem','gridcell'].includes(role) ||
+        node.getAttribute?.('onclick') ||
+        (node.getAttribute?.('tabindex') != null && node.getAttribute('tabindex') !== '-1')) {
+      return node;
+    }
+    node = node.parentElement;
+  }
+  return null;
+}
+
+// Fire the complete pointer+mouse+click sequence that all frameworks respond to
+function fireClick(el, scoreOrTag) {
+  // 'instant' scroll is synchronous — ensures getBoundingClientRect is accurate
+  el.scrollIntoView({ behavior: 'instant', block: 'center' });
+  try { el.focus(); } catch(e) {}
+
+  const rect = el.getBoundingClientRect();
+  const x = Math.round(rect.left + rect.width  / 2);
+  const y = Math.round(rect.top  + rect.height / 2);
+  const base = {
+    bubbles: true, cancelable: true, view: window,
+    clientX: x, clientY: y, screenX: x, screenY: y,
+    buttons: 1, button: 0,
+  };
+
+  el.dispatchEvent(new PointerEvent('pointerover',  { ...base, isPrimary: true }));
+  el.dispatchEvent(new MouseEvent ('mouseover',   base));
+  el.dispatchEvent(new PointerEvent('pointermove', { ...base, isPrimary: true }));
+  el.dispatchEvent(new MouseEvent ('mousemove',   base));
+  el.dispatchEvent(new PointerEvent('pointerdown', { ...base, isPrimary: true }));
+  el.dispatchEvent(new MouseEvent ('mousedown',   base));
+  el.dispatchEvent(new PointerEvent('pointerup',   { ...base, isPrimary: true }));
+  el.dispatchEvent(new MouseEvent ('mouseup',     base));
+  el.dispatchEvent(new MouseEvent ('click',       base));
+
+  // Native .click() as a final safety net
+  try { el.click(); } catch(e) {}
+
+  const label = getElText(el) || getFieldLabel(el);
+  return `clicked "${label.slice(0, 60)}" (${scoreOrTag})`;
 }
 
 // ── Set Text ──────────────────────────────────────────────────────────────────
@@ -376,7 +436,7 @@ function doClearField(target) {
 // ── Typing engine ─────────────────────────────────────────────────────────────
 
 function typeInto(el, text) {
-  el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  el.scrollIntoView({ behavior: 'instant', block: 'center' });
   el.focus();
   el.click();
 

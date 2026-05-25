@@ -2,46 +2,288 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <title>NAVI</title>
+  <title>Echo by Ecolocation</title>
   <style>
-    * { margin: 0; padding: 0; box-sizing: border-box; }
+    *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+
+    :root {
+      --bg:       #04070d;
+      --bg2:      #080d17;
+      --card:     rgba(255,255,255,0.04);
+      --border:   rgba(255,255,255,0.08);
+      --eco:      #00c896;
+      --echo:     #7c6fff;
+      --echo2:    #b49fff;
+      --danger:   #f87171;
+      --text:     #f1f5f9;
+      --muted:    #4a5568;
+      --sub:      #94a3b8;
+    }
 
     body {
-      width: 100%;
-      height: 100vh;
-      background: #080810;
-      color: #fff;
+      width: 100%; height: 100vh;
+      background: var(--bg);
+      color: var(--text);
       font-family: 'Segoe UI', system-ui, sans-serif;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      padding: 32px 20px 24px;
       overflow: hidden;
     }
 
-    .logo {
-      font-size: 48px;
-      font-weight: 900;
-      letter-spacing: 10px;
-      background: linear-gradient(135deg, #fff 0%, #a0a0ff 100%);
-      -webkit-background-clip: text;
-      -webkit-text-fill-color: transparent;
-      margin-bottom: 4px;
+    /* ── Screen switcher ─────────────────────────────── */
+    .screen { display: none; width: 100%; height: 100vh; }
+    .screen.active { display: flex; flex-direction: column; }
+
+    /* ═══════════════════════════════════════════════════
+       LOGIN SCREEN
+    ═══════════════════════════════════════════════════ */
+    #screen-login {
+      align-items: center;
+      justify-content: center;
+      padding: 24px 20px;
+      background: radial-gradient(ellipse at 50% -20%, rgba(124,111,255,0.15) 0%, transparent 70%),
+                  radial-gradient(ellipse at 80% 80%, rgba(0,200,150,0.08) 0%, transparent 60%),
+                  var(--bg);
     }
 
+    .login-logo {
+      text-align: center;
+      margin-bottom: 28px;
+    }
+    .login-brand {
+      font-size: 11px;
+      letter-spacing: 4px;
+      text-transform: uppercase;
+      color: var(--eco);
+      margin-bottom: 6px;
+      font-weight: 600;
+    }
+    .login-title {
+      font-size: 42px;
+      font-weight: 900;
+      letter-spacing: 4px;
+      background: linear-gradient(135deg, #fff 0%, var(--echo2) 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      line-height: 1;
+    }
+    .login-tagline {
+      font-size: 12px;
+      color: var(--sub);
+      margin-top: 8px;
+      letter-spacing: 1px;
+    }
+
+    .login-card {
+      width: 100%;
+      max-width: 340px;
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      padding: 28px 24px;
+      backdrop-filter: blur(20px);
+    }
+
+    .auth-tabs {
+      display: flex;
+      background: rgba(255,255,255,0.04);
+      border-radius: 10px;
+      padding: 3px;
+      margin-bottom: 24px;
+    }
+    .auth-tab {
+      flex: 1;
+      text-align: center;
+      padding: 8px;
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--muted);
+      cursor: pointer;
+      border-radius: 8px;
+      transition: all 0.2s;
+      user-select: none;
+    }
+    .auth-tab.active {
+      background: rgba(124,111,255,0.2);
+      color: var(--echo2);
+    }
+
+    .field {
+      margin-bottom: 14px;
+    }
+    .field label {
+      display: block;
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: 1px;
+      text-transform: uppercase;
+      color: var(--sub);
+      margin-bottom: 6px;
+    }
+    .field input {
+      width: 100%;
+      background: rgba(255,255,255,0.05);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 11px 14px;
+      font-size: 14px;
+      color: var(--text);
+      outline: none;
+      transition: border-color 0.2s, background 0.2s;
+    }
+    .field input:focus {
+      border-color: var(--echo);
+      background: rgba(124,111,255,0.08);
+    }
+    .field input::placeholder { color: var(--muted); }
+
+    .btn-primary {
+      width: 100%;
+      padding: 13px;
+      border: none;
+      border-radius: 12px;
+      background: linear-gradient(135deg, var(--echo) 0%, #5b4fef 100%);
+      color: #fff;
+      font-size: 15px;
+      font-weight: 700;
+      cursor: pointer;
+      margin-top: 6px;
+      transition: opacity 0.2s, transform 0.1s;
+      letter-spacing: 0.5px;
+    }
+    .btn-primary:hover { opacity: 0.9; }
+    .btn-primary:active { transform: scale(0.98); }
+    .btn-primary:disabled { opacity: 0.4; cursor: default; }
+
+    .auth-error {
+      color: var(--danger);
+      font-size: 12px;
+      text-align: center;
+      margin-top: 10px;
+      min-height: 16px;
+    }
+
+    .login-footer {
+      margin-top: 28px;
+      text-align: center;
+      font-size: 10px;
+      color: var(--muted);
+      letter-spacing: 1px;
+    }
+    .login-footer span { color: var(--eco); }
+
+    /* ═══════════════════════════════════════════════════
+       NO SUBSCRIPTION SCREEN
+    ═══════════════════════════════════════════════════ */
+    #screen-plans {
+      align-items: center;
+      justify-content: center;
+      padding: 32px 24px;
+      background: radial-gradient(ellipse at 50% 0%, rgba(0,200,150,0.1) 0%, transparent 60%),
+                  var(--bg);
+    }
+
+    .nosub-wrap {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      text-align: center;
+      max-width: 300px;
+      width: 100%;
+      gap: 0;
+    }
+    .nosub-logo { margin-bottom: 20px; }
+    .nosub-icon {
+      font-size: 36px;
+      color: var(--eco);
+      margin-bottom: 16px;
+      line-height: 1;
+    }
+    .nosub-title {
+      font-size: 20px;
+      font-weight: 800;
+      margin-bottom: 10px;
+    }
+    .nosub-desc {
+      font-size: 13px;
+      color: var(--sub);
+      line-height: 1.6;
+      margin-bottom: 24px;
+    }
+    .nosub-divider {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      width: 100%;
+      font-size: 10px;
+      letter-spacing: 1px;
+      color: var(--muted);
+      text-transform: uppercase;
+      margin: 18px 0 14px;
+    }
+    .nosub-divider::before,
+    .nosub-divider::after {
+      content: '';
+      flex: 1;
+      height: 1px;
+      background: var(--border);
+    }
+    .btn-activate {
+      width: 100%;
+      padding: 12px;
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      background: rgba(255,255,255,0.04);
+      color: var(--text);
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+      margin-bottom: 16px;
+      transition: background 0.2s, border-color 0.2s;
+    }
+    .btn-activate:hover { background: rgba(255,255,255,0.08); border-color: var(--echo); }
+
+    .logout-link {
+      font-size: 11px;
+      color: var(--muted);
+      cursor: pointer;
+      transition: color 0.2s;
+    }
+    .logout-link:hover { color: var(--danger); }
+
+    /* ═══════════════════════════════════════════════════
+       APP SCREEN (Echo interface)
+    ═══════════════════════════════════════════════════ */
+    #screen-app {
+      align-items: center;
+      padding: 32px 20px 24px;
+    }
+
+    .logo {
+      font-size: 40px;
+      font-weight: 900;
+      letter-spacing: 8px;
+      background: linear-gradient(135deg, #fff 0%, var(--echo2) 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      margin-bottom: 2px;
+    }
+    .brand-label {
+      font-size: 9px;
+      letter-spacing: 3px;
+      text-transform: uppercase;
+      color: var(--eco);
+      margin-bottom: 4px;
+      font-weight: 600;
+    }
     .tagline {
-      color: #444;
+      color: var(--muted);
       font-size: 10px;
       letter-spacing: 3px;
       text-transform: uppercase;
       margin-bottom: 20px;
     }
 
-    /* Status */
     .status-pill {
-      display: flex;
-      align-items: center;
-      gap: 7px;
+      display: flex; align-items: center; gap: 7px;
       border: 1px solid #222;
       border-radius: 999px;
       padding: 6px 16px;
@@ -50,10 +292,11 @@
       margin-bottom: 20px;
       transition: all 0.3s;
     }
+    .status-pill.sleeping  { border-color: #1a1a1a; color: #2a2a2a; }
     .status-pill.connected { border-color: #2a5; color: #4d4; }
-    .status-pill.listening { border-color: #44f; color: #88f; }
+    .status-pill.listening { border-color: var(--echo); color: var(--echo2); }
     .status-pill.thinking  { border-color: #fa0; color: #fb4; }
-    .status-pill.speaking  { border-color: #a4f; color: #c8f; }
+    .status-pill.speaking  { border-color: var(--eco); color: var(--eco); }
 
     .dot {
       width: 7px; height: 7px;
@@ -67,29 +310,21 @@
       50%      { opacity:.3; transform:scale(.6); }
     }
 
-    /* Visualizer */
     .viz {
-      display: flex;
-      align-items: center;
-      gap: 4px;
-      height: 32px;
-      margin-bottom: 16px;
+      display: flex; align-items: center; gap: 4px;
+      height: 32px; margin-bottom: 16px;
     }
     .bar {
-      width: 4px;
-      background: #1a1a2e;
-      border-radius: 99px;
-      height: 4px;
+      width: 4px; background: #1a1a2e;
+      border-radius: 99px; height: 4px;
       transition: height 0.08s, background 0.2s;
     }
 
-    /* Mic ring */
     .mic-wrap { position: relative; margin-bottom: 20px; }
     .mic-ring {
-      position: absolute;
-      inset: -18px;
+      position: absolute; inset: -18px;
       border-radius: 50%;
-      border: 2px solid #44f;
+      border: 2px solid var(--echo);
       opacity: 0;
     }
     .mic-ring.active { opacity:1; animation: ring 1.5s infinite; }
@@ -105,39 +340,30 @@
       background: #0e0e1a;
       font-size: 28px;
       cursor: pointer;
-      display: flex;
-      align-items: center;
-      justify-content: center;
+      display: flex; align-items: center; justify-content: center;
       transition: all 0.2s;
-      position: relative;
-      z-index: 1;
+      position: relative; z-index: 1;
     }
     .mic-btn:hover  { border-color: #444; }
     .mic-btn.active {
-      border-color: #44f;
+      border-color: var(--echo);
       background: #141430;
-      box-shadow: 0 0 30px rgba(80,80,255,.4);
+      box-shadow: 0 0 30px rgba(124,111,255,.4);
     }
     .mic-btn:disabled { opacity:.4; cursor:default; }
 
-    /* Conversation */
     .convo {
-      width: 100%;
-      flex: 1;
-      display: flex;
-      flex-direction: column;
-      gap: 10px;
+      width: 100%; flex: 1;
+      display: flex; flex-direction: column; gap: 10px;
       overflow-y: auto;
       scrollbar-width: thin;
       scrollbar-color: #1a1a1a transparent;
       padding-bottom: 8px;
     }
-
     .bubble {
       padding: 10px 14px;
       border-radius: 14px;
-      font-size: 13px;
-      line-height: 1.5;
+      font-size: 13px; line-height: 1.5;
       max-width: 92%;
       animation: fadeUp .25s ease;
     }
@@ -146,63 +372,232 @@
       to   { opacity:1; transform:translateY(0); }
     }
     .bubble.user {
-      background: #13132e;
-      border: 1px solid #22225a;
-      color: #99a;
-      align-self: flex-end;
+      background: #13132e; border: 1px solid #22225a;
+      color: #99a; align-self: flex-end;
       border-bottom-right-radius: 3px;
     }
     .bubble.agent {
-      background: #0f0f1c;
-      border: 1px solid #1e1e1e;
-      color: #ddd;
-      align-self: flex-start;
+      background: #0f0f1c; border: 1px solid #1e1e1e;
+      color: #ddd; align-self: flex-start;
       border-bottom-left-radius: 3px;
     }
     .bubble .lbl {
-      font-size: 9px;
-      letter-spacing: 1px;
-      text-transform: uppercase;
-      opacity: .35;
+      font-size: 9px; letter-spacing: 1px;
+      text-transform: uppercase; opacity:.35;
       margin-bottom: 3px;
     }
 
     .hint {
       margin-top: 12px;
       color: #2a2a2a;
-      font-size: 10px;
-      letter-spacing: .5px;
-      text-align: center;
-      flex-shrink: 0;
+      font-size: 10px; letter-spacing: .5px;
+      text-align: center; flex-shrink: 0;
     }
+
+    /* Loading spinner */
+    .spinner {
+      width: 32px; height: 32px;
+      border: 3px solid rgba(124,111,255,0.2);
+      border-top-color: var(--echo);
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+      margin: auto;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
   </style>
 </head>
 <body>
 
-  <div class="logo">NAVI</div>
-  <div class="tagline">Always Listening</div>
+  <!-- ── LOGIN SCREEN ──────────────────────────────────── -->
+  <div id="screen-login" class="screen active">
+    <div class="login-logo">
+      <div class="login-brand">Ecolocation</div>
+      <div class="login-title">Echo</div>
+      <div class="login-tagline">Your voice. Your AI.</div>
+    </div>
 
-  <div class="status-pill" id="pill">
-    <div class="dot pulse" id="dot"></div>
-    <span id="statusTxt">Connecting…</span>
+    <div class="login-card">
+      <div class="auth-tabs">
+        <div class="auth-tab active" id="tab-login">Sign In</div>
+        <div class="auth-tab" id="tab-signup">Sign Up</div>
+      </div>
+
+      <div class="field">
+        <label>Email</label>
+        <input type="email" id="auth-email" placeholder="you@example.com" autocomplete="email" />
+      </div>
+      <div class="field">
+        <label>Password</label>
+        <input type="password" id="auth-password" placeholder="••••••••" autocomplete="current-password" />
+      </div>
+
+      <button class="btn-primary" id="auth-btn">Sign In</button>
+      <div class="auth-error" id="auth-error"></div>
+    </div>
+
+    <div class="login-footer">Powered by <span>Ecolocation</span> · Echo AI</div>
   </div>
 
-  <div class="viz">
-    <div class="bar" id="b0"></div><div class="bar" id="b1"></div>
-    <div class="bar" id="b2"></div><div class="bar" id="b3"></div>
-    <div class="bar" id="b4"></div><div class="bar" id="b5"></div>
-    <div class="bar" id="b6"></div><div class="bar" id="b7"></div>
-    <div class="bar" id="b8"></div>
+  <!-- ── NO SUBSCRIPTION SCREEN ───────────────────────── -->
+  <div id="screen-plans" class="screen">
+    <div class="nosub-wrap">
+      <div class="nosub-logo">
+        <div class="login-brand">Ecolocation</div>
+        <div class="login-title">Echo</div>
+      </div>
+      <div class="nosub-icon">✦</div>
+      <h2 class="nosub-title">Activate your plan</h2>
+      <p class="nosub-desc">Choose a plan on our website to unlock Echo — then come back here and tap the button below.</p>
+      <button class="btn-primary" id="btn-get-echo">View Plans &amp; Subscribe →</button>
+      <div class="nosub-divider">already subscribed?</div>
+      <button class="btn-activate" id="already-link">Activate Echo</button>
+      <span class="logout-link" id="logout-link">Sign out</span>
+    </div>
   </div>
 
-  <div class="mic-wrap">
-    <div class="mic-ring" id="ring"></div>
-    <button class="mic-btn" id="micBtn" disabled>🎙️</button>
+  <!-- ── PLANS SCREEN (UNUSED — kept for reference) ────── -->
+  <div id="screen-plans-OLD" class="screen">
+    <div class="plans-header-OLD">
+      <div class="plans-brand">Ecolocation</div>
+      <div class="plans-title">Activate Echo</div>
+      <div class="plans-sub">Your AI assistant that controls Chrome by voice</div>
+    </div>
+
+    <div class="echo-pitch">
+      <div class="pitch-row">
+        <span class="pitch-item">📧 Send emails</span>
+        <span class="pitch-item">▶️ Play music</span>
+        <span class="pitch-item">🔍 Search anything</span>
+      </div>
+      <div class="pitch-row">
+        <span class="pitch-item">💬 Send WhatsApp</span>
+        <span class="pitch-item">🗺️ Open Maps</span>
+        <span class="pitch-item">🖱️ Click anything</span>
+      </div>
+      <div class="pitch-tagline">Just say <strong>Echo</strong> — then speak. It handles the rest.</div>
+    </div>
+
+    <div class="billing-toggle">
+      <span class="billing-label active" id="lbl-monthly">Monthly</span>
+      <div class="toggle-pill" id="billing-pill">
+        <div class="toggle-knob"></div>
+      </div>
+      <span class="billing-label" id="lbl-annual">Annual</span>
+      <span class="save-badge">Save 25%</span>
+    </div>
+
+    <!-- Standard -->
+    <div class="plan-card">
+      <div class="plan-top">
+        <div>
+          <div class="plan-name">Standard</div>
+          <div class="plan-limit">Great for everyday use</div>
+        </div>
+        <div class="plan-price">
+          <div class="plan-amount" id="price-standard">$19.99</div>
+          <div class="plan-period">/month</div>
+          <div class="plan-annual-note" id="note-standard" style="display:none">$180 billed yearly</div>
+        </div>
+      </div>
+      <ul class="plan-features">
+        <li>Full voice browser control</li>
+        <li>Send emails in Gmail by voice</li>
+        <li>Play YouTube &amp; YouTube Music</li>
+        <li>Message contacts on WhatsApp</li>
+        <li>Search Google, open Maps</li>
+        <li>English &amp; Spanish support</li>
+      </ul>
+      <button class="btn-subscribe" data-plan="standard">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="#009cde"><path d="M7.076 21.337H2.47a.641.641 0 01-.633-.74L4.944.901C5.026.382 5.474 0 5.998 0h7.46c2.57 0 4.578.543 5.69 1.81 1.01 1.15 1.304 2.42 1.012 4.287-.023.143-.047.288-.077.437-.983 5.05-4.349 6.797-8.647 6.797h-2.19c-.524 0-.968.382-1.05.9l-1.12 7.106zm14.146-14.42a3.35 3.35 0 00-.607-.541c-.013.076-.026.175-.041.254-.93 4.778-4.005 7.201-9.138 7.201h-2.19a.563.563 0 00-.556.479l-1.187 7.527h-.99l-.316 2.005c-.055.346.214.657.567.657h3.957a.641.641 0 00.633-.547l.026-.139.503-3.19.032-.174a.641.641 0 01.633-.547h.399c2.587 0 4.614-.537 5.707-2.117.82-1.19 1.12-2.652.968-4.868z"/></svg>
+        Subscribe with PayPal
+      </button>
+    </div>
+
+    <!-- Pro (Popular) -->
+    <div class="plan-card popular">
+      <div class="popular-badge">Most Popular</div>
+      <div class="plan-top">
+        <div>
+          <div class="plan-name">Pro</div>
+          <div class="plan-limit">For power users</div>
+        </div>
+        <div class="plan-price">
+          <div class="plan-amount" id="price-pro">$45.00</div>
+          <div class="plan-period">/month</div>
+          <div class="plan-annual-note" id="note-pro" style="display:none">$480 billed yearly</div>
+        </div>
+      </div>
+      <ul class="plan-features">
+        <li>Everything in Standard</li>
+        <li>Spotify, Netflix, Instagram &amp; more</li>
+        <li>Multi-tab voice control</li>
+        <li>Scroll, click, type — any site</li>
+        <li>Custom AI name</li>
+        <li>Faster AI response speed</li>
+      </ul>
+      <button class="btn-subscribe" data-plan="pro">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="#009cde"><path d="M7.076 21.337H2.47a.641.641 0 01-.633-.74L4.944.901C5.026.382 5.474 0 5.998 0h7.46c2.57 0 4.578.543 5.69 1.81 1.01 1.15 1.304 2.42 1.012 4.287-.023.143-.047.288-.077.437-.983 5.05-4.349 6.797-8.647 6.797h-2.19c-.524 0-.968.382-1.05.9l-1.12 7.106zm14.146-14.42a3.35 3.35 0 00-.607-.541c-.013.076-.026.175-.041.254-.93 4.778-4.005 7.201-9.138 7.201h-2.19a.563.563 0 00-.556.479l-1.187 7.527h-.99l-.316 2.005c-.055.346.214.657.567.657h3.957a.641.641 0 00.633-.547l.026-.139.503-3.19.032-.174a.641.641 0 01.633-.547h.399c2.587 0 4.614-.537 5.707-2.117.82-1.19 1.12-2.652.968-4.868z"/></svg>
+        Subscribe with PayPal
+      </button>
+    </div>
+
+    <!-- Elite -->
+    <div class="plan-card">
+      <div class="plan-top">
+        <div>
+          <div class="plan-name">Elite</div>
+          <div class="plan-limit">Unlimited · Always-on</div>
+        </div>
+        <div class="plan-price">
+          <div class="plan-amount" id="price-elite">$99.99</div>
+          <div class="plan-period">/month</div>
+          <div class="plan-annual-note" id="note-elite" style="display:none">$959.88 billed yearly</div>
+        </div>
+      </div>
+      <ul class="plan-features">
+        <li>Everything in Pro</li>
+        <li>Unlimited daily use — no limits</li>
+        <li>Designed for blind &amp; low-vision users</li>
+        <li>Use Echo all day, every day</li>
+        <li>Early access to new features</li>
+        <li>Priority support</li>
+      </ul>
+      <button class="btn-subscribe" data-plan="elite">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="#009cde"><path d="M7.076 21.337H2.47a.641.641 0 01-.633-.74L4.944.901C5.026.382 5.474 0 5.998 0h7.46c2.57 0 4.578.543 5.69 1.81 1.01 1.15 1.304 2.42 1.012 4.287-.023.143-.047.288-.077.437-.983 5.05-4.349 6.797-8.647 6.797h-2.19c-.524 0-.968.382-1.05.9l-1.12 7.106zm14.146-14.42a3.35 3.35 0 00-.607-.541c-.013.076-.026.175-.041.254-.93 4.778-4.005 7.201-9.138 7.201h-2.19a.563.563 0 00-.556.479l-1.187 7.527h-.99l-.316 2.005c-.055.346.214.657.567.657h3.957a.641.641 0 00.633-.547l.026-.139.503-3.19.032-.174a.641.641 0 01.633-.547h.399c2.587 0 4.614-.537 5.707-2.117.82-1.19 1.12-2.652.968-4.868z"/></svg>
+        Subscribe with PayPal
+      </button>
+    </div>
+
+  </div><!-- /screen-plans-OLD -->
+
+  <!-- ── APP SCREEN (Echo) ─────────────────────────────── -->
+  <div id="screen-app" class="screen">
+    <div class="brand-label">Ecolocation</div>
+    <div class="logo">Echo</div>
+    <div class="tagline" id="tagline">Say Echo to wake me</div>
+
+    <div class="status-pill sleeping" id="pill">
+      <div class="dot" id="dot"></div>
+      <span id="statusTxt">Connecting…</span>
+    </div>
+
+    <div class="viz">
+      <div class="bar" id="b0"></div><div class="bar" id="b1"></div>
+      <div class="bar" id="b2"></div><div class="bar" id="b3"></div>
+      <div class="bar" id="b4"></div><div class="bar" id="b5"></div>
+      <div class="bar" id="b6"></div><div class="bar" id="b7"></div>
+      <div class="bar" id="b8"></div>
+    </div>
+
+    <div class="mic-wrap">
+      <div class="mic-ring" id="ring"></div>
+      <button class="mic-btn" id="micBtn" disabled>🎙️</button>
+    </div>
+
+    <div class="convo" id="convo"></div>
+
+    <div class="hint" id="hint">Say "Echo" to wake me up</div>
   </div>
-
-  <div class="convo" id="convo"></div>
-
-  <div class="hint">NAVI is always listening — just speak</div>
 
   <script src="sidepanel.js"></script>
 </body>

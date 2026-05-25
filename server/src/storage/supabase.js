@@ -6,8 +6,10 @@ const enabled = !!(env.SUPABASE_URL && env.SUPABASE_SERVICE_ROLE_KEY);
 let supabase = null;
 if (enabled) {
   const { createClient } = await import('@supabase/supabase-js');
+  const ws = (await import('ws')).default;
   supabase = createClient(env.SUPABASE_URL, env.SUPABASE_SERVICE_ROLE_KEY, {
     auth: { persistSession: false },
+    realtime: { transport: ws },
   });
   logger.info('[Supabase] Conectado');
 } else {
