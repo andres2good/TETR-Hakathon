@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "Echo by Ecolocation",
   "version": "0.1.0",
-  "description": "Echo is your AI voice assistant that controls your browser hands-free. Say 'Echo' to activate — it navigates, clicks, types, and reads the web for you. By Ecolocation.",
+  "description": "AI voice assistant for Chrome. Say 'Echo' to activate - it navigates, clicks, types, and reads the web for you. By Ecolocation.",
 
   "icons": {
     "16":  "icons/icon16.png",
