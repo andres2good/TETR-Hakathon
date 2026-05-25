@@ -36,6 +36,22 @@ app.get('/health', (req, res) => {
   });
 });
 
+app.get('/test-claude', async (req, res) => {
+  try {
+    const { env } = await import('./config/env.js');
+    const Anthropic = (await import('@anthropic-ai/sdk')).default;
+    const client = new Anthropic({ apiKey: env.ANTHROPIC_API_KEY });
+    const msg = await client.messages.create({
+      model: env.CLAUDE_MODEL,
+      max_tokens: 10,
+      messages: [{ role: 'user', content: 'say hi' }],
+    });
+    res.json({ ok: true, model: env.CLAUDE_MODEL, reply: msg.content[0]?.text });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: e.message, status: e.status });
+  }
+});
+
 app.use(notFound);
 app.use(errorHandler);
 
