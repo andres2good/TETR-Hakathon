@@ -271,7 +271,7 @@ export async function generateResponse({
     }
 
     return finalText;
-  }, { name: 'Claude API', maxAttempts: 2 });
+  }, { name: 'Claude API', maxAttempts: 3 });
 }
 
 // ── Single streaming turn ─────────────────────────────────────────────────────

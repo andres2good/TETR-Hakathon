@@ -237,11 +237,11 @@ async function handleUserSpeech(sessionId, text) {
     session.lastScreenshot = null;
 
   } catch (error) {
-    log.error('[Session] Error procesando', { error: error.message, stack: error.stack });
-    const fallback = session.language === 'es'
-      ? 'Tuve un problema. ¿Puedes repetir?'
-      : 'I had an issue. Can you repeat that?';
-    // Push the fallback as assistant reply so history stays valid (user always followed by assistant)
+    log.error('[Session] Error procesando', { error: error.message, status: error.status, stack: error.stack });
+    const isRateLimit = error.status === 429 || error.status === 529;
+    const fallback = isRateLimit
+      ? language(session, 'Estoy muy ocupado ahora, intenta de nuevo en un momento.', "I'm a bit busy right now, try again in a moment.")
+      : language(session, 'Lo siento, tuve un problema. ¿Puedes intentarlo de nuevo?', 'Sorry, something went wrong. Please try again.');
     session.messages.push({ role: 'assistant', content: fallback });
     await speakToUser(sessionId, fallback);
   } finally {
