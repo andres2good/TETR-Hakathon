@@ -96,7 +96,8 @@ export function handleAudioChunk(sessionId, audioChunk) {
 export function handleUiTree(sessionId, uiTree) {
   const session = activeSessions.get(sessionId);
   if (!session) return;
-  session.lastUiTree = uiTree;
+  // Strip lone surrogates — pages with emoji/special chars produce invalid JSON
+  session.lastUiTree = uiTree?.replace(/[\uD800-\uDFFF]/g, '') ?? null;
 }
 
 // ─── Manejar screenshot ───────────────────────────────────────────────────────
@@ -129,7 +130,7 @@ async function handleUserSpeech(sessionId, text) {
     session.messages.push({ role: 'assistant', content: '...' });
   }
 
-  session.messages.push({ role: 'user', content: text });
+  session.messages.push({ role: 'user', content: text.replace(/[\uD800-\uDFFF]/g, '') });
 
   // Mantener historial acotado — slice keeping pairs, then ensure starts with 'user'
   if (session.messages.length > SESSION.MAX_HISTORY * 2) {
