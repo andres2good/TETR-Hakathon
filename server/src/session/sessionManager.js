@@ -162,36 +162,63 @@ async function handleUserSpeech(sessionId, text) {
     }
 
     // ─── Respuesta completa con Claude + loop de herramientas ─────────────────
-    let agentText = '';      // current TTS buffer (reset after each spoken chunk)
-    let fullAgentText = '';  // full text for history (never reset)
+    let fullAgentText = '';
     const pendingActions = [];
+
+    // Collect sentences during streaming without blocking the Claude stream.
+    // TTS is queued and spoken sequentially AFTER each tool turn completes.
+    const speechQueue = [];
+    let speechRunning = false;
+    let currentBuffer = '';
+
+    function flushSpeech(text) {
+      if (!text?.trim()) return;
+      speechQueue.push(text.trim());
+      if (!speechRunning) drainSpeech();
+    }
+
+    async function drainSpeech() {
+      speechRunning = true;
+      while (speechQueue.length > 0) {
+        const sentence = speechQueue.shift();
+        if (session.generationId !== myGen) break;
+        await speakToUser(sessionId, sentence, myGen);
+      }
+      speechRunning = false;
+    }
 
     await generateResponse({
       sessionId,
       messages: session.messages,
-      screenshot: null,          // Never auto-send — Claude uses the live UI tree instead.
-      uiTree: session.lastUiTree, // Screenshots only arrive via explicit request_screenshot calls.
+      screenshot: null,
+      uiTree: session.lastUiTree,
       language: session.language,
       userName: session.user?.name,
 
-      onTextChunk: async (chunk) => {
-        if (session.generationId !== myGen) return; // user interrupted
-        agentText += chunk;
+      onTextChunk: (chunk) => {
+        if (session.generationId !== myGen) return;
         fullAgentText += chunk;
+        currentBuffer += chunk;
 
-        // Fire TTS only on sentence-ending punctuation followed by space or end-of-chunk.
-        // Require minimum 12 chars to avoid firing on "Dr.", "3.5", etc.
-        const endsWithSentence = /[.!?](\s|$)/.test(chunk) || /[.!?]$/.test(agentText.trim());
-        if (endsWithSentence && agentText.trim().length >= 12) {
-          const toSpeak = agentText.trim();
-          agentText = '';
-          await speakToUser(sessionId, toSpeak, myGen);
+        // Speak on sentence boundaries — don't await, let stream continue
+        const endsWithSentence = /[.!?](\s|$)/.test(chunk) || /[.!?]$/.test(currentBuffer.trim());
+        if (endsWithSentence && currentBuffer.trim().length >= 12) {
+          flushSpeech(currentBuffer);
+          currentBuffer = '';
         }
       },
 
-      // Execute tool on device and wait for the page to settle
       onToolCall: async (toolName, toolInput, toolId) => {
         if (session.generationId !== myGen) return 'interrupted';
+
+        // Flush any buffered text before executing a tool
+        if (currentBuffer.trim()) { flushSpeech(currentBuffer); currentBuffer = ''; }
+
+        // Wait for all queued speech to finish before acting on the page
+        while (speechRunning || speechQueue.length > 0) {
+          await new Promise(r => setTimeout(r, 100));
+        }
+
         const action = { type: toolName, ...toolInput };
         pendingActions.push(action);
         sendToDevice(sessionId, WS_MESSAGES.ACTION, action);
@@ -200,8 +227,6 @@ async function handleUserSpeech(sessionId, text) {
         const wait = ACTION_SETTLE_MS[toolName] ?? ACTION_SETTLE_MS.default;
         await new Promise(r => setTimeout(r, wait));
 
-        // For navigation actions, tell Claude the page may still be loading
-        // and that it MUST call request_screenshot before doing anything else.
         if (['open_app', 'navigate_to', 'new_tab', 'press_back'].includes(toolName)) {
           return 'Navigation started. Call request_screenshot now to verify the page loaded before taking any other action.';
         }
@@ -209,16 +234,17 @@ async function handleUserSpeech(sessionId, text) {
         return 'ok';
       },
 
-      // Devolver el estado más reciente de la pantalla después de cada acción
       getLatestScreenContext: async () => ({
         uiTree: session.lastUiTree,
         screenshot: session.lastScreenshot,
       }),
     });
 
-    // Remaining text that didn't hit a sentence boundary
-    if (agentText.trim()) {
-      await speakToUser(sessionId, agentText.trim());
+    // Speak any remaining buffered text
+    if (currentBuffer.trim()) flushSpeech(currentBuffer);
+    // Wait for all speech to finish
+    while (speechRunning || speechQueue.length > 0) {
+      await new Promise(r => setTimeout(r, 100));
     }
 
     // Use full accumulated text for history; fall back to action list
